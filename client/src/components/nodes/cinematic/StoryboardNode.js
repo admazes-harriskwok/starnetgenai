@@ -21,35 +21,36 @@ export default memo(({ id, data, selected }) => {
 
             <div className="node-content">
                 {data.output ? (
-                    <div className="output-preview">
+                    <div className="output-preview" onClick={() => data.onExpand && data.onExpand(data.output)}>
                         <img src={data.output} alt="Storyboard Grid" className="storyboard-img" />
+                        <div className="expand-hint">Click to Expand</div>
                     </div>
                 ) : (
                     <div className="placeholder">
                         {data.loading ? (
                             <div className="loader">Rendering 3x3 Grid...</div>
                         ) : (
-                            <p>Ready for Storyboard</p>
+                            <p>Waiting for Director's Script</p>
                         )}
                     </div>
                 )}
 
                 <div className="prompt-section">
-                    <label>Grid Prompt Override</label>
+                    <label>Grid Prompt (Editable)</label>
                     <textarea
                         className="prompt-editor"
                         value={data.prompt || ''}
                         onChange={(e) => data.onDataChange(id, { prompt: e.target.value })}
-                        placeholder="Optional: Override the auto-generated prompt for this grid..."
+                        placeholder="Define visual style/continuity here..."
                     />
                 </div>
 
                 <button
                     className="action-btn"
                     onClick={() => data.onGenerate(id)}
-                    disabled={data.loading || data.output}
+                    disabled={data.loading}
                 >
-                    {data.loading ? 'Generating...' : data.output ? 'Storyboard Ready' : 'Generate Storyboard (4 🪙)'}
+                    {data.loading ? 'Generating...' : data.output ? 'Regenerate Storyboard' : 'Generate Storyboard (4 🪙)'}
                 </button>
             </div>
 
@@ -78,8 +79,18 @@ export default memo(({ id, data, selected }) => {
                     gap: 8px;
                 }
                 .node-content { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-                .output-preview { width: 100%; border-radius: 6px; overflow: hidden; border: 1px solid #eee; }
-                .storyboard-img { width: 100%; height: 140px; object-fit: cover; }
+                .output-preview { 
+                    width: 100%; border-radius: 8px; overflow: hidden; border: 1px solid #e2e8f0; 
+                    position: relative; cursor: pointer; transition: all 0.2s;
+                }
+                .output-preview:hover { transform: scale(1.02); box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
+                .expand-hint {
+                    position: absolute; inset: 0; background: rgba(0,0,0,0.4); color: white;
+                    display: flex; align-items: center; justify-content: center; font-size: 0.75rem; 
+                    font-weight: 700; opacity: 0; transition: opacity 0.2s;
+                }
+                .output-preview:hover .expand-hint { opacity: 1; }
+                .storyboard-img { width: 100%; height: 160px; object-fit: cover; }
                 .placeholder { 
                     background: #f8f9fa; 
                     height: 80px; 

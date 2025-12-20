@@ -86,6 +86,7 @@ function CanvasInterface() {
     const [isSaving, setIsSaving] = useState(false);
     const [isExportModalOpen, setIsExportModalOpen] = useState(false);
     const [isNodeSelectorOpen, setIsNodeSelectorOpen] = useState(false);
+    const [expandedMedia, setExpandedMedia] = useState(null);
     const reactFlowInstance = useRef(null);
     const [selectedRatios, setSelectedRatios] = useState(['9:16']);
     const [isExporting, setIsExporting] = useState(false);
@@ -193,52 +194,47 @@ function CanvasInterface() {
     }, [nodes, edges, projectName, saveProject]);
 
     const STORYBOARD_PROMPT = `
-<role>
-You are an award-winning trailer director + cinematographer + storyboard artist. Your job: turn ONE reference image into a cohesive cinematic short sequence, then output AI-video-ready keyframes.
-</role>
+<role> 
+You are an award-winning trailer director + cinematographer + storyboard artist. Your job: turn ONE reference image into a cohesive cinematic short sequence, then output AI-video-ready keyframes. 
+</role>  
 
-<input>
-User provides: one reference image (image).
-</input>
+<input> 
+User provides: one reference image (image). 
+</input>  
 
-<non-negotiable rules - continuity & truthfulness>
-1) First, analyze the full composition: identify ALL key subjects (person/group/vehicle/object/animal/props/environment elements) and describe spatial relationships and interactions.
-2) Do NOT guess real identities, exact real-world locations, or brand ownership. Stick to visible facts.
-3) Strict continuity across ALL shots: same subjects, same wardrobe, same environment, same time-of-day.
-4) Depth of field must be realistic. Keep ONE consistent cinematic color grade.
-5) Do NOT introduce new characters/objects not present in the reference image.
-</non-negotiable rules - continuity & truthfulness>
+<non-negotiable rules - continuity & truthfulness> 
+1) First, analyze the full composition: identify ALL key subjects (person/group/vehicle/object/animal/props/environment elements) and describe spatial relationships and interactions. 
+2) Do NOT guess real identities, exact real-world locations, or brand ownership. Stick to visible facts. 
+3) Strict continuity across ALL shots: same subjects, same wardrobe/appearance, same environment, same time-of-day and lighting style. 
+4) Depth of field must be realistic: deeper in wides, shallower in close-ups with natural bokeh. Keep ONE consistent cinematic color grade across the entire sequence. 
+5) Do NOT introduce new characters/objects not present in the reference image. 
+</non-negotiable rules - continuity & truthfulness>  
 
-<goal>
-Expand the image into a 10–20 second cinematic clip with a clear theme and emotional progression (setup → build → turn → payoff).
-</goal>
+<goal> 
+Expand the image into a 10–20 second cinematic clip with a clear theme and emotional progression (setup → build → turn → payoff). 
+</goal>  
 
-<step 1 - scene breakdown>
-Output subheadings: Subjects, Environment & Lighting, Visual Anchors.
-</step 1 - scene breakdown>
+<step 1 - scene breakdown> Output (with clear subheadings): 
+- Subjects
+- Environment & Lighting
+- Visual Anchors
+</step 1 - scene breakdown>  
 
-<step 2 - theme & story>
-Theme, Logline, Emotional Arc (4 beats).
-</step 2 - theme & story>
+<step 2 - theme & story> Theme, Logline, Emotional Arc. 
+</step 2 - theme & story>  
 
-<step 3 - cinematic approach>
-Shot progression, Camera movement plan, Lens & exposure suggestions, Light & color.
-</step 3 - cinematic approach>
+<step 3 - cinematic approach> Shot progression strategy, Camera movement plan, Lens & exposure, Light & color. 
+</step 3 - cinematic approach>  
 
-<step 4 - keyframes for AI video (primary deliverable)>
-Output a Keyframe List: default 9–12 frames.
-Format per frame: [KF# | duration | shot type]
-- Composition
-- Action/beat
-- Camera (height, angle, movement)
-- Lens/DoF
-- Lighting & grade
-Hard requirements: 1 environment wide, 1 intimate close-up, 1 extreme detail ECU, 1 power-angle shot.
-</step 4 - keyframes for AI video>
+<step 4 - keyframes for AI video (primary deliverable)> Output a Keyframe List: default 9 frames. 
+Use this exact format per frame:  [KF# | duration | shot type] - Composition: ... - Action/beat: ... - Camera: ... - Lens/DoF: ... - Lighting & grade: ...
+</step 4 - keyframes for AI video>  
 
-<step 5 - contact sheet output>
-Output text description for ONE master grid image (3x3 or 4x3) containing all keyframes.
-</step 5 - contact sheet output>
+<step 5 - contact sheet output (MUST OUTPUT ONE BIG GRID IMAGE)> 
+Output a prompt for ONE single master image: a Cinematic Contact Sheet / Storyboard Grid containing ALL 9 keyframes in a 3x3 grid.
+</step 5 - contact sheet output>  
+
+<final output format> Output in this order: A) Scene Breakdown B) Theme & Story C) Cinematic Approach D) Keyframe List E) Master Contact Sheet Prompt </final output format>
 `;
 
     // Handle Generation Logic
@@ -332,8 +328,30 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                 }
                 modelToUse = 'gemini-2.5-flash-image';
             } else if (targetNode.type === 'imageSplitter') {
-                finalPrompt = "High definition upscale of cinematic storyboard frame. Photorealistic, clear details.";
-                modelToUse = 'gemini-2.5-flash-image';
+                if (!inputAnalysis || !inputAnalysis.keyframes) throw new Error("Director Analysis with Keyframes required.");
+
+                console.log("🛠️ --- STARTING 9 PARALLEL HD RESTORATION TASKS ---");
+                const framePrompts = inputAnalysis.keyframes.map((kf, i) => {
+                    return `High-fidelity cinematic frame ${i + 1}. ${kf.action}. Shot: ${kf.camera}. Match style of reference image precisely. Photorealistic, 8k.`;
+                });
+
+                const hdFrameTasks = framePrompts.map(prompt =>
+                    fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: prompt,
+                            apiKey,
+                            model: 'gemini-2.5-flash-image',
+                            images: inputImagesBase64
+                        })
+                    }).then(res => res.json())
+                );
+
+                const frameResults = await Promise.all(hdFrameTasks);
+                const successfulFrames = frameResults.map(r => r.output || "https://picsum.photos/seed/error/400/225");
+
+                data = { frames: successfulFrames };
             }
 
             if (targetNode.type === 'videoGen') {
@@ -350,8 +368,10 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                 for (let i = 0; i < count; i++) {
                     const currentFrame = hdImages[i];
                     const kf = keyframeData[i];
+                    const motionPrompt = (targetNode.data.videoPrompts?.[i]) ||
+                        `Cinematic shot, ${kf.action}. Camera movement: ${kf.camera}. High resolution, photorealistic.`;
 
-                    console.log(`Generating Video for Index ${i} using Image: ${currentFrame} and Prompt: ${kf.camera}`);
+                    console.log(`Generating Video for Index ${i} using Image: ${currentFrame.substring(0, 50)}... and Prompt: ${motionPrompt}`);
 
                     // Rate Limit Spacing: Wait if not the first clip
                     if (i > 0) {
@@ -374,7 +394,7 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                     }));
 
                     const frameBase64 = await imageToBase64(currentFrame);
-                    const videoPrompt = `Cinematic shot, ${kf.action}. Camera movement: ${kf.camera}. High resolution, photorealistic.`;
+                    const promptToUse = motionPrompt;
 
                     let opResult;
                     let attempts = 0;
@@ -386,7 +406,7 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                prompt: videoPrompt,
+                                prompt: promptToUse,
                                 apiKey,
                                 model: 'veo-3.0-generate-001',
                                 images: [frameBase64]
@@ -514,31 +534,35 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
 
                     if (targetNode.type === 'aiAnalysis' && data.text) {
                         // Advanced Keyframe Extraction
-                        const kfText = data.text.split('<step 4')[1]?.split('</step 4>')[0] || "";
-                        const kfLines = kfText.split('\n').filter(l => l.includes('[KF#'));
-                        const parsedKeyframes = kfLines.map((line, idx) => {
-                            const action = line.split('- Action/beat')[1]?.split('-')[0]?.trim() || "Dynamic cinematic movement";
-                            const camera = line.split('- Camera')[1]?.split('-')[0]?.trim() || "Smooth pan";
-                            return { action, camera };
+                        const kfText = data.text.split('[KF#')[1] ? data.text.split(/\[KF#/i).slice(1) : [];
+                        const themeMatch = data.text.match(/Theme:\s*(.*)/i);
+
+                        const parsedKeyframes = kfText.map((block) => {
+                            const actionMatch = block.match(/Action\/beat:\s*([^\n-]*)/i);
+                            const cameraMatch = block.match(/Camera:\s*([^\n-]*)/i);
+                            return {
+                                action: actionMatch ? actionMatch[1].trim() : "Cinematic subject focus",
+                                camera: cameraMatch ? cameraMatch[1].trim() : "Smooth movement"
+                            };
                         });
+
+                        // Ensure we have 9 keyframes exactly
+                        const finalKFs = parsedKeyframes.length >= 9 ? parsedKeyframes.slice(0, 9) :
+                            [...parsedKeyframes, ...Array(9 - parsedKeyframes.length).fill({ action: "Cinematic subject context", camera: "Cinematic camera" })];
 
                         updatedData.analysis = {
                             full_text: data.text,
-                            scene_breakdown: data.text.split('<step 1 - scene breakdown>')[1]?.split('</step 1 - scene breakdown>')[0] ||
-                                data.text.split('<step 1')[1]?.split('</')[0] ||
-                                "Analysis complete.",
-                            keyframes: parsedKeyframes.length > 0 ? parsedKeyframes : Array(9).fill({ action: "Cinematic action", camera: "Cinematic camera" }),
-                            contact_sheet_description: data.text.split('<step 5 - contact sheet output>')[1]?.split('</step 5 - contact sheet output>')[0] ||
+                            theme: themeMatch ? themeMatch[1].trim() : "Cinematic Sequence",
+                            keyframes: finalKFs,
+                            contact_sheet_description: data.text.split('Master Contact Sheet Prompt')[1] ||
                                 data.text.split('<step 5')[1]?.split('</')[0] ||
-                                data.text.substring(0, 500)
+                                "3x3 Grid of 9 cinematic keyframes"
                         };
                     } else if (targetNode.type === 'imageSplitter') {
-                        updatedData.frames = Array(9).fill(data.output || "https://picsum.photos/seed/frame/400/225");
+                        updatedData.frames = data.frames;
                     } else if (targetNode.type === 'videoGen') {
                         updatedData.clips = data.clips;
                         updatedData.output = data.clips[0];
-                    } else if (targetNode.type === 'aiImage' || targetNode.type === 'aiVideo') {
-                        updatedData.output = data.output;
                     } else {
                         updatedData.output = data.output;
                         updatedData.usedPrompt = finalPrompt;
@@ -697,7 +721,6 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
         const applyCallbacks = (nds) => nds.map(node => {
             const isMedia = ['media', 'source', 'sourceUpload'].includes(node.type);
             const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter'].includes(node.type);
-            const isAssistant = node.type === 'assistant';
 
             return {
                 ...node,
@@ -705,7 +728,8 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                     ...node.data,
                     onGenerate: isGen ? onGenerate : undefined,
                     onDataChange: onNodeDataChange,
-                    onImageUpload: isMedia ? handleImageUpload : undefined
+                    onImageUpload: isMedia ? handleImageUpload : undefined,
+                    onExpand: (url) => setExpandedMedia(url)
                 }
             };
         });
@@ -730,7 +754,8 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                 label: type,
                 onGenerate: onGenerate,
                 onDataChange: onNodeDataChange,
-                onImageUpload: handleImageUpload
+                onImageUpload: handleImageUpload,
+                onExpand: (url) => setExpandedMedia(url)
             },
         };
         setNodes((nds) => nds.concat(newNode));
@@ -996,6 +1021,23 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                 </div>
             )}
 
+            {/* Lightbox Modal */}
+            {expandedMedia && (
+                <div className="lightbox-overlay" onClick={() => setExpandedMedia(null)}>
+                    <div className="lightbox-content" onClick={e => e.stopPropagation()}>
+                        <button className="close-lightbox" onClick={() => setExpandedMedia(null)}>×</button>
+                        {expandedMedia.includes('.mp4') || expandedMedia.startsWith('data:video') ? (
+                            <video src={expandedMedia} controls autoPlay className="full-view-media" />
+                        ) : (
+                            <img src={expandedMedia} alt="Full View" className="full-view-media" />
+                        )}
+                        <div className="lightbox-actions">
+                            <a href={expandedMedia} download="starnet_output" className="download-link">Download Asset</a>
+                        </div>
+                    </div>
+                </div>
+            )}
+
             <style jsx>{`
                 .canvas-page {
                     height: 100vh;
@@ -1193,6 +1235,60 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
                 .btn-cancel { background: white; border: 1px solid #e2e8f0; padding: 10px 20px; border-radius: 8px; cursor: pointer; font-weight: 600; color: #64748b; }
                 .btn-primary { background: #0f172a; color: white; border: none; padding: 10px 24px; border-radius: 8px; font-weight: 600; cursor: pointer; min-width: 120px; }
                 .btn-primary:disabled { opacity: 0.5; cursor: not-allowed; }
+
+                /* Lightbox */
+                .lightbox-overlay {
+                    position: fixed;
+                    inset: 0;
+                    background: rgba(0,0,0,0.9);
+                    backdrop-filter: blur(10px);
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    z-index: 2000;
+                    padding: 40px;
+                }
+                .lightbox-content {
+                    position: relative;
+                    max-width: 90vw;
+                    max-height: 85vh;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                }
+                .full-view-media {
+                    max-width: 100%;
+                    max-height: 80vh;
+                    border-radius: 12px;
+                    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                }
+                .close-lightbox {
+                    position: absolute;
+                    top: -40px;
+                    right: -20px;
+                    background: transparent;
+                    border: none;
+                    color: white;
+                    font-size: 2.5rem;
+                    cursor: pointer;
+                }
+                .lightbox-actions {
+                    margin-top: 20px;
+                }
+                .download-link {
+                    background: white;
+                    color: black;
+                    padding: 10px 24px;
+                    border-radius: 30px;
+                    font-weight: 700;
+                    text-decoration: none;
+                    font-size: 0.9rem;
+                    transition: all 0.2s;
+                }
+                .download-link:hover {
+                    background: #f97316;
+                    color: white;
+                }
             `}</style>
         </div>
     );

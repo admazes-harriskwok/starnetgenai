@@ -27,52 +27,45 @@ export default memo(({ id, data, selected }) => {
                         {data.loading ? (
                             <div className="loader">Analyzing Scene...</div>
                         ) : (
-                            <p>Waiting for Reference Image</p>
+                            <p>Ready to Analyze Reference</p>
                         )}
                     </div>
                 ) : (
                     <div className="analysis-result">
                         <div className="section">
-                            <label>Storyboard Prompt</label>
+                            <label>Director's Script (Editable)</label>
                             <textarea
-                                className="prompt-editor"
-                                value={analysis.contact_sheet_description || ''}
+                                className="script-editor"
+                                value={analysis.full_text || ''}
                                 onChange={(e) => data.onDataChange(id, {
-                                    analysis: { ...analysis, contact_sheet_description: e.target.value }
+                                    analysis: { ...analysis, full_text: e.target.value }
                                 })}
-                                placeholder="Edit the visual style or scene details here..."
+                                placeholder="The full director's script..."
                             />
                         </div>
-                        <div className="section">
-                            <label>Keyframe Prompts (Edit for Video)</label>
-                            <div className="keyframes-editor">
-                                {analysis.keyframes?.map((kf, idx) => (
-                                    <div key={idx} className="kf-row">
-                                        <span className="kf-idx">{idx + 1}</span>
-                                        <input
-                                            type="text"
-                                            className="kf-input"
-                                            value={kf.action || ''}
-                                            onChange={(e) => {
-                                                const newKFs = [...analysis.keyframes];
-                                                newKFs[idx] = { ...kf, action: e.target.value };
-                                                data.onDataChange(id, { analysis: { ...analysis, keyframes: newKFs } });
-                                            }}
-                                        />
-                                    </div>
-                                ))}
+
+                        <div className="compact-meta">
+                            <div className="meta-item">
+                                <label>KF Count</label>
+                                <span>{analysis.keyframes?.length || 0}</span>
+                            </div>
+                            <div className="meta-item">
+                                <label>Theme</label>
+                                <span>{analysis.theme || 'Proposing...'}</span>
                             </div>
                         </div>
                     </div>
                 )}
 
-                <button
-                    className="action-btn"
-                    onClick={() => data.onGenerate(id)}
-                    disabled={data.loading || analysis}
-                >
-                    {data.loading ? 'Generating Analysis...' : analysis ? 'Analysis Complete' : 'Run Director AI'}
-                </button>
+                <div className="node-actions">
+                    <button
+                        className="action-btn"
+                        onClick={() => data.onGenerate(id)}
+                        disabled={data.loading}
+                    >
+                        {data.loading ? 'Generating...' : analysis ? 'Regenerate Analysis' : 'Run Director AI (1 🪙)'}
+                    </button>
+                </div>
             </div>
 
             <Handle type="source" position={Position.Right} className="handle-dot" />
@@ -81,7 +74,7 @@ export default memo(({ id, data, selected }) => {
                 .node-container {
                     background: white;
                     border-radius: 12px;
-                    width: 260px;
+                    width: 320px;
                     box-shadow: 0 4px 12px rgba(0,0,0,0.1);
                     border: 2px solid transparent;
                     transition: all 0.2s;
@@ -93,7 +86,7 @@ export default memo(({ id, data, selected }) => {
                     padding: 10px 16px;
                     border-bottom: 1px solid #ffe8db;
                     font-size: 0.9rem;
-                    font-weight: 600;
+                    font-weight: 700;
                     color: #ff6b3d;
                     display: flex;
                     align-items: center;
@@ -103,68 +96,49 @@ export default memo(({ id, data, selected }) => {
                 .placeholder { 
                     background: #fdfdfd; 
                     border: 1px dashed #eee; 
-                    height: 80px; 
+                    height: 100px; 
                     display: flex; 
                     align-items: center; 
                     justify-content: center; 
                     font-size: 0.8rem; 
-                    color: #999; 
+                    color: #94A3B8; 
+                    border-radius: 8px;
+                    text-align: center;
+                }
+                .loader { color: #ff6b3d; animation: pulse 1s infinite; font-weight: 600; }
+                @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+                
+                .analysis-result { display: flex; flex-direction: column; gap: 12px; }
+                .section label { display: block; font-weight: 700; font-size: 0.65rem; color: #94A3B8; text-transform: uppercase; margin-bottom: 6px; }
+                
+                .script-editor {
+                    width: 100%;
+                    min-height: 200px;
+                    background: #f8fafc;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    padding: 12px;
+                    font-size: 0.8rem;
+                    line-height: 1.5;
+                    color: #1A1C1E;
+                    resize: vertical;
+                    font-family: 'DM Sans', sans-serif;
+                    outline: none;
+                }
+                .script-editor:focus { border-color: #ff6b3d; background: white; }
+
+                .compact-meta {
+                    display: grid;
+                    grid-template-columns: 1fr 2fr;
+                    gap: 12px;
+                    background: #f1f5f9;
+                    padding: 10px;
                     border-radius: 8px;
                 }
-                .loader { color: #ff6b3d; animation: pulse 1s infinite; }
-                @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
-                .analysis-result { font-size: 0.8rem; color: #444; }
-                .section { margin-bottom: 8px; }
-                .section label { display: block; font-weight: 700; font-size: 0.7rem; color: #888; text-transform: uppercase; margin-bottom: 2px; }
-                .badge { background: #ff6b3d; color: white; padding: 2px 8px; border-radius: 12px; font-size: 0.7rem; }
-                .prompt-editor {
-                    width: 100%;
-                    min-height: 80px;
-                    background: #fdfdfd;
-                    border: 1px solid #eee;
-                    border-radius: 6px;
-                    padding: 8px;
-                    font-size: 0.75rem;
-                    color: #444;
-                    resize: vertical;
-                    font-family: inherit;
-                    outline: none;
-                }
-                .prompt-editor:focus {
-                    border-color: #ff6b3d;
-                }
-                .keyframes-editor {
-                    max-height: 120px;
-                    overflow-y: auto;
-                    display: flex;
-                    flex-direction: column;
-                    gap: 6px;
-                    padding-right: 4px;
-                }
-                .kf-row {
-                    display: flex;
-                    align-items: center;
-                    gap: 8px;
-                    background: #fcfcfc;
-                    padding: 4px 6px;
-                    border-radius: 4px;
-                    border: 1px solid #f0f0f0;
-                }
-                .kf-idx {
-                    font-size: 0.65rem;
-                    font-weight: 700;
-                    color: #ff6b3d;
-                    min-width: 14px;
-                }
-                .kf-input {
-                    flex: 1;
-                    border: none;
-                    background: transparent;
-                    font-size: 0.7rem;
-                    color: #555;
-                    outline: none;
-                }
-                .kf-input:focus { color: #000; }
+                .meta-item { display: flex; flex-direction: column; gap: 2px; }
+                .meta-item label { font-size: 0.6rem; font-weight: 800; color: #64748B; text-transform: uppercase; }
+                .meta-item span { font-size: 0.75rem; font-weight: 600; color: #1A1C1E; }
+
                 .toolbar-wrapper {
                     display: flex;
                     gap: 4px;
@@ -184,20 +158,24 @@ export default memo(({ id, data, selected }) => {
                     border-radius: 4px;
                     cursor: pointer;
                 }
-                .toolbar-btn:hover {
-                    background: rgba(255,255,255,0.1);
-                }
+                .toolbar-btn:hover { background: rgba(255,255,255,0.1); }
+                
+                .node-actions { margin-top: 8px; }
                 .action-btn {
-                    background: #ff6b3d;
+                    background: linear-gradient(135deg, #ff9a5a, #ff5e3a);
                     color: white;
                     border: none;
-                    padding: 8px;
-                    border-radius: 6px;
-                    font-weight: 600;
+                    padding: 10px;
+                    border-radius: 30px;
+                    font-weight: 700;
+                    font-size: 0.85rem;
                     cursor: pointer;
                     width: 100%;
+                    box-shadow: 0 4px 10px rgba(255, 107, 61, 0.2);
+                    transition: all 0.2s;
                 }
-                .action-btn:disabled { background: #eee; color: #aaa; cursor: not-allowed; }
+                .action-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 15px rgba(255, 107, 61, 0.3); }
+                .action-btn:disabled { background: #E2E8F0; color: #94A3B8; cursor: not-allowed; box-shadow: none; }
                 :global(.handle-dot) { background: #ff6b3d !important; width: 10px !important; height: 10px !important; }
             `}</style>
         </div>

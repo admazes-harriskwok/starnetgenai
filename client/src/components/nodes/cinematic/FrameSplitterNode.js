@@ -23,31 +23,35 @@ export default memo(({ id, data, selected }) => {
 
             <div className="node-content">
                 {frames.length > 0 ? (
-                    <div className="frames-grid">
-                        {frames.slice(0, 4).map((frame, i) => (
-                            <div key={i} className="frame-thumb">
-                                <img src={frame} alt={`Frame ${i + 1}`} />
-                            </div>
-                        ))}
-                        {frames.length > 4 && <div className="more-count">+{frames.length - 4}</div>}
+                    <div className="frames-grid-wrapper">
+                        <div className="frames-grid">
+                            {frames.map((frame, i) => (
+                                <div key={i} className="frame-box" onClick={() => data.onExpand && data.onExpand(frame)}>
+                                    <img src={frame} alt={`KF ${i + 1}`} />
+                                    <span className="kf-label">KF {i + 1}</span>
+                                </div>
+                            ))}
+                        </div>
                     </div>
                 ) : (
                     <div className="placeholder">
                         {data.loading ? (
-                            <div className="loader">Upscaling 9 Frames...</div>
+                            <div className="loader">Restoring 9 Parallel KFs...</div>
                         ) : (
-                            <p>Ready to Restore HD</p>
+                            <p>Ready for HD Restoration</p>
                         )}
                     </div>
                 )}
 
-                <button
-                    className="action-btn"
-                    onClick={() => data.onGenerate(id)}
-                    disabled={data.loading || frames.length > 0}
-                >
-                    {data.loading ? 'Restoring...' : frames.length > 0 ? 'Restoration Done' : 'Split & Upscale HD (5 🪙)'}
-                </button>
+                <div className="node-actions">
+                    <button
+                        className="action-btn"
+                        onClick={() => data.onGenerate(id)}
+                        disabled={data.loading}
+                    >
+                        {data.loading ? 'Restoring...' : frames.length > 0 ? 'Regenerate HD Frames' : 'Restore HD Keyframes (9 🪙)'}
+                    </button>
+                </div>
             </div>
 
             <Handle type="source" position={Position.Right} className="handle-dot" />
@@ -75,13 +79,12 @@ export default memo(({ id, data, selected }) => {
                     gap: 8px;
                 }
                 .node-content { padding: 16px; display: flex; flex-direction: column; gap: 12px; }
-                .frames-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 4px; position: relative; }
-                .frame-thumb img { width: 100%; height: 60px; object-fit: cover; border-radius: 4px; }
-                .more-count { 
-                    position: absolute; bottom: 4px; right: 4px; 
-                    background: rgba(0,0,0,0.7); color: white; border-radius: 4px; 
-                    padding: 2px 6px; font-size: 0.7rem; font-weight: 700;
-                }
+                .frames-grid-wrapper { max-height: 200px; overflow-y: auto; padding-right: 4px; }
+                .frames-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; }
+                .frame-box { position: relative; border-radius: 6px; overflow: hidden; background: #000; cursor: pointer; aspect-ratio: 16/9; }
+                .frame-box img { width: 100%; height: 100%; object-fit: cover; transition: transform 0.2s; }
+                .frame-box:hover img { transform: scale(1.1); }
+                .kf-label { position: absolute; bottom: 2px; right: 2px; background: rgba(0,0,0,0.6); color: white; font-size: 0.5rem; padding: 1px 4px; border-radius: 3px; font-weight: 700; }
                 .placeholder { 
                     background: #f0faff; 
                     height: 80px; 
