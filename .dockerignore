@@ -1,0 +1,14 @@
+node_modules
+.next
+client/node_modules
+client/.next
+server/node_modules
+.env
+.env.local
+client/.env.local
+public/uploads
+client/public/uploads
+.git
+.gitignore
+README.md
+*.md

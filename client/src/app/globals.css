@@ -1,0 +1,137 @@
+:root {
+  /* Design System: Colors */
+  --bg-main: #F4F6F8;
+  --bg-white: #FFFFFF;
+  
+  /* Primary Action Gradient (Orange/Red-Orange) */
+  --primary-start: #FF9A5A;
+  --primary-end: #FF5E3A;
+  
+  /* Secondary Brand Gradient (Purple-to-Pink) */
+  --brand-start: #8A2387;
+  --brand-end: #E94057; /* or F27121 for 3-stop, but let's stick to 2-stop visual */
+  
+  /* Text Colors */
+  --text-heading: #1A1C1E; /* Dark Slate */
+  --text-body: #64748B;    /* Medium Gray */
+  --text-meta: #94A3B8;    /* Light Gray */
+  
+  /* Dimensions & Layout */
+  --sidebar-width: 260px;
+  --header-height: 80px;
+  --border-radius-card: 16px;
+  --border-radius-btn: 30px; /* Pill shape */
+  
+  /* Shadows */
+  --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.04);
+  --shadow-hover: 0 8px 30px rgba(0, 0, 0, 0.08);
+  
+  /* Misc */
+  --border-color: #E2E8F0;
+}
+
+* {
+  box-sizing: border-box;
+  padding: 0;
+  margin: 0;
+}
+
+body {
+  font-family: 'DM Sans', sans-serif;
+  background-color: var(--bg-main);
+  color: var(--text-heading);
+  -webkit-font-smoothing: antialiased;
+}
+
+a {
+  text-decoration: none;
+  color: inherit;
+  transition: opacity 0.2s;
+}
+
+a:hover {
+  opacity: 0.8;
+}
+
+ul {
+  list-style: none;
+}
+
+.main-layout {
+  display: flex;
+  min-height: 100vh;
+}
+
+.main-content {
+  flex: 1;
+  /* Sidebar is fixed, so we push content */
+  margin-left: var(--sidebar-width);
+  margin-top: var(--header-height);
+  padding: 40px;
+  background-color: var(--bg-main);
+  min-height: calc(100vh - var(--header-height));
+  transition: all 0.3s ease;
+}
+
+/* --- Component Utilities --- */
+
+/* Cards */
+.card-base {
+  background: var(--bg-white);
+  border-radius: var(--border-radius-card);
+  padding: 24px;
+  box-shadow: var(--shadow-card);
+  border: 1px solid rgba(255,255,255,0.5); /* subtle glow */
+}
+
+/* Primary Button (Gradient Pill) */
+.btn-primary-gradient {
+  background: linear-gradient(135deg, var(--primary-start), var(--primary-end));
+  color: white;
+  border: none;
+  padding: 12px 24px;
+  border-radius: var(--border-radius-btn);
+  font-weight: 600;
+  font-size: 0.95rem;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(255, 107, 61, 0.3);
+  transition: transform 0.2s, box-shadow 0.2s;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+}
+
+.btn-primary-gradient:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 61, 0.4);
+}
+
+/* Secondary Button (Outline) */
+.btn-secondary-outline {
+  background: white;
+  border: 1px solid var(--border-color);
+  color: var(--text-heading);
+  padding: 10px 20px;
+  border-radius: var(--border-radius-btn);
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.btn-secondary-outline:hover {
+  border-color: var(--primary-start);
+  color: var(--primary-start);
+}
+
+/* Headings */
+h1, h2, h3, h4 {
+  color: var(--text-heading);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+p {
+  color: var(--text-body);
+  line-height: 1.6;
+}

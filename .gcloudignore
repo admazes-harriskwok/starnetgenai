@@ -1,0 +1,22 @@
+# Exclude development and dependency directories
+node_modules/
+**/node_modules/
+.next/
+**/.next/
+
+# Environment files
+.env
+.env.local
+**/.env.local
+
+# Local uploads
+public/uploads/
+**/public/uploads/
+
+# Version control and documentation
+.git/
+.gitignore
+.dockerignore
+.antigravityignore
+README.md
+*.md
