@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useCallback, useEffect, useRef, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
+import { saveProjectToDB, getProjectsFromDB } from '../../lib/db';
 import ReactFlow, {
     Background,
     Controls,
@@ -127,15 +128,11 @@ function CanvasInterface() {
     }, []);
 
     // Save Project Logic
-    const saveProject = useCallback(() => {
+    const saveProject = useCallback(async () => {
         if (!projectId && !searchParams.get('template')) return;
 
         setIsSaving(true);
-        const savedProjects = JSON.parse(localStorage.getItem('starnet_projects') || '[]');
         const currentId = projectId || `p_${Date.now()}`;
-
-        // Find if this project exists
-        const existingIndex = savedProjects.findIndex(p => p.id === currentId);
 
         // Pick a thumbnail (prioritize generated outputs)
         const thumbnailNode = nodesRef.current.find(n => n.data.output) || nodesRef.current.find(n => n.data.image);
@@ -147,23 +144,15 @@ function CanvasInterface() {
             viewport = reactFlowInstance.current.getViewport();
         }
 
-        // Helper: Convert Base64 to URL or null
-        const sanitizeImageData = (data) => {
-            if (!data) return null;
-            // Allow Base64 images as they are now our primary storage method
-            // (Cloud Run ephemeral disk workaround)
-            return data;
-        };
-
-        // Serialize nodes with ALL data preserved (but sanitized)
+        // Serialize nodes with ALL data preserved
         const serializedNodes = nodesRef.current.map(n => ({
             ...n,
             data: {
                 ...n.data,
                 // Explicitly preserve critical data for restoration
                 prompt: n.data.prompt,
-                image: sanitizeImageData(n.data.image),
-                output: sanitizeImageData(n.data.output),
+                image: n.data.image,
+                output: n.data.output,
                 label: n.data.label,
                 usedPrompt: n.data.usedPrompt,
                 loading: undefined,
@@ -180,90 +169,16 @@ function CanvasInterface() {
             nodes: serializedNodes,
             edges: edgesRef.current,
             viewport: viewport,
-            thumbnail: sanitizeImageData(thumb),
+            thumbnail: thumb,
             updatedAt: new Date().toISOString(),
             aspectRatio: '9:16'
         };
 
-        if (existingIndex > -1) {
-            savedProjects[existingIndex] = projectData;
-        } else {
-            savedProjects.unshift(projectData);
-        }
-
         try {
-            localStorage.setItem('starnet_projects', JSON.stringify(savedProjects));
+            await saveProjectToDB(projectData);
             setTimeout(() => setIsSaving(false), 500);
         } catch (error) {
-            if (error.name === 'QuotaExceededError') {
-                console.warn('LocalStorage Quota Exceeded. Attempting cleanup...');
-                // Optimization: Keep full data for only the 5 most recent projects
-                const optimizedProjects = savedProjects.map((p, index) => {
-                    if (index < 5) return p;
-                    // Strip heavy Base64 data from older projects
-                    return {
-                        ...p,
-                        thumbnail: null,
-                        nodes: (p.nodes || []).map(n => ({
-                            ...n,
-                            data: {
-                                ...n.data,
-                                output: null,
-                                image: null
-                            }
-                        }))
-                    };
-                });
-
-                try {
-                    localStorage.setItem('starnet_projects', JSON.stringify(optimizedProjects));
-                    console.log('Saved with optimized storage.');
-                } catch (e) {
-                    console.error('Even optimized storage failed. Attempting emergency cleanup...');
-
-                    // AGGRESSIVE CLEANUP: Strip ALL image data (including Base64)
-                    const stripAllImages = (data) => {
-                        if (typeof data === 'string' && data.startsWith('data:image')) {
-                            return null; // Remove Base64 images
-                        }
-                        if (typeof data === 'string' && data.startsWith('/uploads/')) {
-                            return data; // Keep URLs (they're small)
-                        }
-                        return data;
-                    };
-
-                    const emergencyProjects = savedProjects.slice(0, 2).map(p => ({
-                        id: p.id,
-                        name: p.name,
-                        updatedAt: p.updatedAt,
-                        aspectRatio: p.aspectRatio,
-                        thumbnail: null, // Remove all thumbnails
-                        viewport: p.viewport,
-                        nodes: (p.nodes || []).map(n => ({
-                            ...n,
-                            data: {
-                                ...n.data,
-                                image: stripAllImages(n.data.image),
-                                output: stripAllImages(n.data.output),
-                                prompt: n.data.prompt,
-                                label: n.data.label
-                            }
-                        })),
-                        edges: p.edges || []
-                    }));
-
-                    try {
-                        localStorage.setItem('starnet_projects', JSON.stringify(emergencyProjects));
-                        console.warn('⚠️ Emergency cleanup successful. Kept 2 projects with URLs only.');
-                    } catch (finalError) {
-                        console.error('❌ Complete storage failure. Clearing all projects.');
-                        localStorage.setItem('starnet_projects', '[]');
-                        alert('Storage quota exceeded. Projects have been cleared. Please use smaller images or export your work.');
-                    }
-                }
-            } else {
-                console.error('Save failed:', error);
-            }
+            console.error('Save failed:', error);
             setIsSaving(false);
         }
     }, [projectId, projectName, searchParams]);
@@ -735,23 +650,35 @@ Output text description for ONE master grid image (3x3 or 4x3) containing all ke
         let name = "Untitled Project";
 
         if (projectId) {
-            // Load existing project - FULL RESTORATION
-            let savedProjects = JSON.parse(localStorage.getItem('starnet_projects') || '[]');
-            savedProjects = savedProjects.filter(p => p && p.id && p.name);
-            const project = savedProjects.find(p => p.id === projectId);
+            // Load existing project from IndexedDB
+            const load = async () => {
+                const savedProjects = await getProjectsFromDB();
+                const project = savedProjects.find(p => p.id === projectId);
 
-            if (project) {
-                initialNodes = project.nodes.map(node => ({
-                    ...node,
-                    data: {
-                        ...node.data,
-                        loading: false
+                if (project) {
+                    initialNodes = project.nodes.map(node => ({
+                        ...node,
+                        data: {
+                            ...node.data,
+                            loading: false
+                        }
+                    }));
+                    initialEdges = project.edges || [];
+                    initialViewport = project.viewport || null;
+
+                    setProjectName(project.name);
+                    setNodes(applyCallbacks(initialNodes));
+                    setEdges(initialEdges);
+
+                    if (initialViewport && reactFlowInstance.current) {
+                        setTimeout(() => {
+                            reactFlowInstance.current?.setViewport(initialViewport);
+                        }, 100);
                     }
-                }));
-                initialEdges = project.edges || [];
-                initialViewport = project.viewport || null;
-                name = project.name;
-            }
+                }
+            };
+            load();
+            return; // Exit here as load() handles the rest
         } else if (tmplId && TEMPLATES[tmplId]) {
             initialNodes = TEMPLATES[tmplId].nodes;
             initialEdges = TEMPLATES[tmplId].edges || [];

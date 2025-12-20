@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TEMPLATES } from '../../config/templates';
+import { getProjectsFromDB } from '../../lib/db';
 
 export default function CampaignsPage() {
   const router = useRouter();
@@ -11,10 +12,13 @@ export default function CampaignsPage() {
   const [ratioFilter, setRatioFilter] = useState('All');
 
   useEffect(() => {
-    let saved = JSON.parse(localStorage.getItem('starnet_projects') || '[]');
-    // Filter out corrupted projects (missing critical fields)
-    saved = saved.filter(p => p && p.id && p.name);
-    setProjects(saved);
+    const load = async () => {
+      let saved = await getProjectsFromDB();
+      // Filter out corrupted projects (missing critical fields)
+      saved = saved.filter(p => p && p.id && p.name);
+      setProjects(saved);
+    };
+    load();
   }, []);
 
   const handleStartBlank = () => {

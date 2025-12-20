@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useRef } from 'react';
 import { useRouter } from 'next/navigation';
+import { getProjectsFromDB } from '../../lib/db';
 
 export default function DashboardPage() {
     const router = useRouter();
@@ -9,14 +10,15 @@ export default function DashboardPage() {
     const [projects, setProjects] = useState([]);
     const [credits, setCredits] = useState(250);
 
-    // Initial load from localStorage
+    // Initial load from IndexedDB
     React.useEffect(() => {
-        let savedProjects = JSON.parse(localStorage.getItem('starnet_projects') || '[]');
-
-        // Filter out corrupted projects (missing critical fields)
-        savedProjects = savedProjects.filter(p => p && p.id && p.name);
-
-        setProjects(savedProjects);
+        const load = async () => {
+            let savedProjects = await getProjectsFromDB();
+            // Filter out corrupted projects (missing critical fields)
+            savedProjects = savedProjects.filter(p => p && p.id && p.name);
+            setProjects(savedProjects);
+        };
+        load();
 
         const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
         if (config.credits !== undefined) {
