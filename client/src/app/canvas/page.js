@@ -237,6 +237,51 @@ Output a prompt for ONE single master image: a Cinematic Contact Sheet / Storybo
 <final output format> Output in this order: A) Scene Breakdown B) Theme & Story C) Cinematic Approach D) Keyframe List E) Master Contact Sheet Prompt </final output format>
 `;
 
+    const SPLITTER_ANALYSIS_PROMPT = `
+<role> 
+You are an award-winning trailer director + cinematographer + storyboard artist. Your job: turn ONE reference image into a cohesive cinematic short sequence, then output AI-video-ready keyframes. 
+</role>  
+
+<input> 
+User provides: one reference image (image) and a Storyboard Grid (image).
+</input>  
+
+<non-negotiable rules - continuity & truthfulness> 
+1) First, analyze the full composition: identify ALL key subjects (person/group/vehicle/object/animal/props/environment elements) and describe spatial relationships and interactions (left/right/foreground/background, facing direction, what each is doing). 
+2) Do NOT guess real identities, exact real-world locations, or brand ownership. Stick to visible facts. Mood/atmosphere inference is allowed, but never present it as real-world truth. 
+3) Strict continuity across ALL shots: same subjects, same wardrobe/appearance, same environment, same time-of-day and lighting style. Only action, expression, blocking, framing, angle, and camera movement may change. 
+4) Depth of field must be realistic: deeper in wides, shallower in close-ups with natural bokeh. Keep ONE consistent cinematic color grade across the entire sequence. 
+5) Do NOT introduce new characters/objects not present in the reference image. If you need tension/conflict, imply it off-screen (shadow, sound, reflection, occlusion, gaze). 
+</non-negotiable rules - continuity & truthfulness>  
+
+<goal> 
+Analyze the provided storyboard grid and its 9 distinct panels. Generate 9 individual, highly detailed, comprehensive image generation prompts (one for each keyframe) to restore each shot in high definition using NanoBanana Pro. 
+</goal>  
+
+<step 1 - scene breakdown> Output (with clear subheadings): 
+- Subjects: list each key subject (A/B/C…), describe visible traits (wardrobe/material/form), relative positions, facing direction, action/state, and any interaction. 
+- Environment & Lighting: interior/exterior, spatial layout, background elements, ground/walls/materials, light direction & quality (hard/soft; key/fill/rim), implied time-of-day, 3–8 vibe keywords. 
+- Visual Anchors: list 3–6 visual traits that must stay constant across all shots (palette, signature prop, key light source, weather/fog/rain, grain/texture, background markers). 
+</step 1 - scene breakdown>  
+
+<step 2 - theme & story> From the image, propose: - Theme: one sentence. - Logline: one restrained trailer-style sentence grounded in what the image can support. - Emotional Arc: 4 beats (setup/build/turn/payoff), one line each. 
+</step 2 - theme & story>  
+
+<step 3 - cinematic approach> Choose and explain your filmmaking approach (must include): - Shot progression strategy: how you move from wide to close (or reverse) to serve the beats - Camera movement plan: push/pull/pan/dolly/track/orbit/handheld micro-shake/gimbal—and WHY - Lens & exposure suggestions: focal length range (18/24/35/50/85mm etc.), DoF tendency (shallow/medium/deep), shutter “feel” (cinematic vs documentary) - Light & color: contrast, key tones, material rendering priorities, optional grain (must match the reference style) </step 3 - cinematic approach>  
+
+<step 4 - keyframes for AI video (primary deliverable)> Output a Keyframe List: 9 frames. 
+Use this exact format per frame:  
+[KF# | suggested duration (sec) | shot type] - Composition: ... - Action/beat: ... - Camera: ... - Lens/DoF: ... - Lighting & grade: ... - Sound/atmos (optional): ...
+
+Hard requirements:
+- Ensure edit-motivated continuity between shots (eyeline match, action continuation, consistent screen direction / axis). 
+</step 4 - keyframes for AI video>  
+
+<step 5 - contact sheet output> Output a description for the 3x3 grid that was analyzed. </step 5 - contact sheet output>  
+
+<final output format> Output in this order: A) Scene Breakdown B) Theme & Story C) Cinematic Approach D) Keyframes (KF# list) E) ONE Master Contact Sheet Image description </final output format>
+`;
+
     // Handle Generation Logic
     const onGenerate = useCallback(async (id, customPrompt) => {
         const targetNode = nodesRef.current.find(n => n.id === id);
@@ -328,12 +373,38 @@ Output a prompt for ONE single master image: a Cinematic Contact Sheet / Storybo
                 }
                 modelToUse = 'gemini-2.5-flash-image';
             } else if (targetNode.type === 'imageSplitter') {
-                if (!inputAnalysis || !inputAnalysis.keyframes) throw new Error("Director Analysis with Keyframes required.");
+                // Find storyboard grid source
+                const storyboardNode = sourceNodes.find(n => n.type === 'imageGen' || (n.data.output && !n.data.frames));
+                const storyboardImg = storyboardNode ? (storyboardNode.data.output || storyboardNode.data.image) : null;
 
-                console.log("🛠️ --- STARTING 9 PARALLEL HD RESTORATION TASKS ---");
-                const framePrompts = inputAnalysis.keyframes.map((kf, i) => {
-                    return `High-fidelity cinematic frame ${i + 1}. ${kf.action}. Shot: ${kf.camera}. Match style of reference image precisely. Photorealistic, 8k.`;
+                if (!storyboardImg) throw new Error("Storyboard Grid output image is required for Keyframe Restoration.");
+
+                console.log("🛠️ --- ANALYZING STORYBOARD FOR HD RESTORATION (Gemini Intelligence) ---");
+                const gridBase64 = await imageToBase64(storyboardImg);
+
+                // 1. Analyze Storyboard Grid with Original Reference for Continuity
+                const analysisResponse = await fetch('/api/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({
+                        prompt: SPLITTER_ANALYSIS_PROMPT,
+                        apiKey,
+                        model: 'gemini-2.5-flash-image',
+                        images: [inputImagesBase64[0], gridBase64] // Original Ref [0] + Storyboard Grid
+                    })
                 });
+
+                const analysisResData = await analysisResponse.json();
+                if (!analysisResponse.ok) throw new Error(analysisResData.error || "Storyboard analysis failed.");
+
+                // 2. Extract 9 Prompts for NanoBanana Pro
+                const kfText = analysisResData.text.split('[KF#')[1] ? analysisResData.text.split(/\[KF#/i).slice(1) : [];
+                const framePrompts = kfText.map((block, i) => {
+                    const cleanBlock = block.split('Sound/atmos')[0].trim();
+                    return `High-fidelity cinematic HD cinematic restoration of Frame ${i + 1}. ${cleanBlock}. Photorealistic 8k, match reference exactly.`;
+                }).slice(0, 9);
+
+                console.log(`🛠️ --- GENERATING 9 PARALLEL HD KEYFRAMES (NanoBanana Pro / Google Image) ---`);
 
                 const hdFrameTasks = framePrompts.map(prompt =>
                     fetch('/api/generate', {
@@ -343,7 +414,7 @@ Output a prompt for ONE single master image: a Cinematic Contact Sheet / Storybo
                             prompt: prompt,
                             apiKey,
                             model: 'gemini-2.5-flash-image',
-                            images: inputImagesBase64
+                            images: [inputImagesBase64[0]] // Match with original reference for perfect continuity
                         })
                     }).then(res => res.json())
                 );
