@@ -373,14 +373,20 @@ Hard requirements:
                 }
                 modelToUse = 'gemini-2.5-flash-image';
             } else if (targetNode.type === 'imageSplitter') {
-                // Find storyboard grid source
+                // Find storyboard grid source and original reference
+                const allNodes = nodesRef.current;
                 const storyboardNode = sourceNodes.find(n => n.type === 'imageGen' || (n.data.output && !n.data.frames));
+                const refNode = allNodes.find(n => n.type === 'source' || n.type === 'sourceUpload' || n.id === 'cv1');
+
                 const storyboardImg = storyboardNode ? (storyboardNode.data.output || storyboardNode.data.image) : null;
+                const refImg = refNode ? (refNode.data.image || refNode.data.output) : null;
 
                 if (!storyboardImg) throw new Error("Storyboard Grid output image is required for Keyframe Restoration.");
+                if (!refImg) throw new Error("Original Reference Image (Step 1) is required for continuity.");
 
                 console.log("🛠️ --- ANALYZING STORYBOARD FOR HD RESTORATION (Gemini Intelligence) ---");
                 const gridBase64 = await imageToBase64(storyboardImg);
+                const refBase64 = await imageToBase64(refImg);
 
                 // 1. Analyze Storyboard Grid with Original Reference for Continuity
                 const analysisResponse = await fetch('/api/generate', {
@@ -390,7 +396,7 @@ Hard requirements:
                         prompt: SPLITTER_ANALYSIS_PROMPT,
                         apiKey,
                         model: 'gemini-2.5-flash-image',
-                        images: [inputImagesBase64[0], gridBase64] // Original Ref [0] + Storyboard Grid
+                        images: [refBase64, gridBase64] // Original Ref + Storyboard Grid
                     })
                 });
 
@@ -414,7 +420,7 @@ Hard requirements:
                             prompt: prompt,
                             apiKey,
                             model: 'gemini-2.5-flash-image',
-                            images: [inputImagesBase64[0]] // Match with original reference for perfect continuity
+                            images: [refBase64] // Match with original reference for perfect continuity
                         })
                     }).then(res => res.json())
                 );
@@ -423,9 +429,7 @@ Hard requirements:
                 const successfulFrames = frameResults.map(r => r.output || "https://picsum.photos/seed/error/400/225");
 
                 data = { frames: successfulFrames };
-            }
-
-            if (targetNode.type === 'videoGen') {
+            } else if (targetNode.type === 'videoGen') {
                 if (!hdImages || !inputAnalysis || !inputAnalysis.keyframes) {
                     throw new Error("Missing inputs! Ensure Step 2 (Analysis) and Step 4 (HD Framing) are complete.");
                 }
