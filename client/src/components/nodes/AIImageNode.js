@@ -19,6 +19,17 @@ export default memo(({ id, data, selected }) => {
             </div>
 
             <div className="node-content">
+                <div className="input-group">
+                    <label>Prompt (Editable)</label>
+                    <textarea
+                        className="prompt-input"
+                        placeholder="Define visual style/continuity here..."
+                        value={data.prompt || ''}
+                        onChange={(e) => data.onDataChange(id, { prompt: e.target.value })}
+                        rows={2}
+                    />
+                </div>
+
                 {data.output ? (
                     <div className="output-wrapper" onClick={() => data.onExpand && data.onExpand(data.output)}>
                         <img src={data.output} alt="Generated" className="gen-media" />
@@ -81,6 +92,30 @@ export default memo(({ id, data, selected }) => {
                     display: flex;
                     flex-direction: column;
                     gap: 12px;
+                }
+                .input-group label {
+                    display: block;
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    color: #64748b;
+                    text-transform: uppercase;
+                    margin-bottom: 4px;
+                }
+                .prompt-input {
+                    width: 100%;
+                    min-height: 50px;
+                    border: 1px solid #e2e8f0;
+                    border-radius: 8px;
+                    padding: 8px;
+                    font-size: 0.8rem;
+                    font-family: inherit;
+                    resize: vertical;
+                    outline: none;
+                    background: #fdfbff;
+                }
+                .prompt-input:focus {
+                    border-color: #8b5cf6;
+                    background: white;
                 }
                 .output-wrapper {
                     height: 150px;

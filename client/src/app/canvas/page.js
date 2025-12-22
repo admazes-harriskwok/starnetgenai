@@ -48,6 +48,7 @@ function CanvasInterface() {
     const searchParams = useSearchParams();
     const router = useRouter();
     const projectId = searchParams.get('projectId');
+    const [currentProjectId, setCurrentProjectId] = useState(projectId);
 
     // 1. Credit State
     const [credits, setCredits] = useState(250);
@@ -150,10 +151,10 @@ function CanvasInterface() {
 
     // Save Project Logic
     const saveProject = useCallback(async () => {
-        if (!projectId && !searchParams.get('template')) return;
+        if (!currentProjectId && !searchParams.get('template')) return;
 
         setIsSaving(true);
-        const currentId = projectId || `p_${Date.now()}`;
+        const pid = currentProjectId || `p_${Date.now()}`;
 
         // Pick a thumbnail (prioritize generated outputs)
         const thumbnailNode = nodesRef.current.find(n => n.data.output) || nodesRef.current.find(n => n.data.image);
@@ -185,7 +186,7 @@ function CanvasInterface() {
         }));
 
         const projectData = {
-            id: currentId,
+            id: pid,
             name: projectName,
             nodes: serializedNodes,
             edges: edgesRef.current,
@@ -197,12 +198,22 @@ function CanvasInterface() {
 
         try {
             await saveProjectToDB(projectData);
+
+            // If this was a new project from a template, promote it to a permanent project
+            if (!currentProjectId) {
+                setCurrentProjectId(pid);
+                const newParams = new URLSearchParams(searchParams);
+                newParams.set('projectId', pid);
+                newParams.delete('template');
+                router.replace(`/canvas?${newParams.toString()}`, { scroll: false });
+            }
+
             setTimeout(() => setIsSaving(false), 500);
         } catch (error) {
             console.error('Save failed:', error);
             setIsSaving(false);
         }
-    }, [projectId, projectName, searchParams]);
+    }, [currentProjectId, projectName, searchParams, router]);
 
     // Autosave Debounce Effect
     useEffect(() => {
@@ -378,7 +389,7 @@ Hard requirements:
             // Specialized Logic Per Node Type
             if (targetNode.type === 'aiAnalysis') {
                 if (inputImagesBase64.length === 0) throw new Error("Reference Image is required for analysis.");
-                finalPrompt = STORYBOARD_PROMPT;
+                finalPrompt = targetNode.data.prompt || STORYBOARD_PROMPT;
                 modelToUse = 'gemini-3-flash';
             } else if (targetNode.type === 'imageGen' || targetNode.type === 'aiImage') {
                 if (targetNode.type === 'imageGen' && !inputAnalysis) {

@@ -23,6 +23,15 @@ export default memo(({ id, data, selected }) => {
             <div className="node-content">
                 {!analysis ? (
                     <div className="placeholder">
+                        <div className="instruction-box">
+                            <label>Analysis Instructions (Editable)</label>
+                            <textarea
+                                className="instruction-input"
+                                placeholder="Special instructions for Director AI..."
+                                value={data.prompt || ''}
+                                onChange={(e) => data.onDataChange(id, { prompt: e.target.value })}
+                            />
+                        </div>
                         {data.loading ? (
                             <div className="loader">Analyzing Scene...</div>
                         ) : (
@@ -95,15 +104,34 @@ export default memo(({ id, data, selected }) => {
                 .placeholder { 
                     background: #fdfdfd; 
                     border: 1px dashed #eee; 
-                    height: 100px; 
+                    min-height: 120px; 
                     display: flex; 
+                    flex-direction: column;
                     align-items: center; 
                     justify-content: center; 
                     font-size: 0.8rem; 
                     color: #94A3B8; 
                     border-radius: 8px;
                     text-align: center;
+                    padding: 12px;
+                    gap: 12px;
                 }
+                .instruction-box { width: 100%; text-align: left; }
+                .instruction-box label { font-size: 0.6rem; font-weight: 800; color: #ff6b3d; text-transform: uppercase; display: block; margin-bottom: 4px; }
+                .instruction-input {
+                    width: 100%;
+                    min-height: 50px;
+                    background: #fff;
+                    border: 1px solid #ffe8db;
+                    border-radius: 6px;
+                    padding: 8px;
+                    font-size: 0.75rem;
+                    color: #333;
+                    outline: none;
+                    resize: vertical;
+                    font-family: inherit;
+                }
+                .instruction-input:focus { border-color: #ff6b3d; }
                 .loader { color: #ff6b3d; animation: pulse 1s infinite; font-weight: 600; }
                 @keyframes pulse { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
                 
