@@ -10,7 +10,7 @@ export default memo(({ id, data, selected }) => {
             <NodeToolbar isVisible={selected} position={Position.Top}>
                 <div className="toolbar-wrapper">
                     <button className="toolbar-btn" onClick={() => alert('Zipping clips...')}>Download All</button>
-                    <button className="toolbar-btn">⚙️</button>
+                    <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
                 </div>
             </NodeToolbar>
             <Handle type="target" position={Position.Left} className="handle-dot" />
@@ -107,6 +107,10 @@ export default memo(({ id, data, selected }) => {
                 }
                 .toolbar-btn:hover {
                     background: rgba(255,255,255,0.1);
+                }
+                .toolbar-btn.delete:hover {
+                    background: #ef4444;
+                    color: white;
                 }
                 .done-text { font-size: 0.7rem; color: #555; font-style: italic; border-top: 1px solid #f0f0f0; padding-top: 8px; margin-top: 8px; }
                 :global(.handle-dot) { background: #00d68f !important; width: 10px !important; height: 10px !important; }

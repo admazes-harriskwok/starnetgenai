@@ -8,8 +8,7 @@ export default memo(({ id, data, selected }) => {
             <NodeToolbar isVisible={selected} position={Position.Top}>
                 <div className="toolbar-wrapper">
                     <button className="toolbar-btn" onClick={() => data.onGenerate(id)}>Generate</button>
-                    <button className="toolbar-btn">⚙️</button>
-                    <button className="toolbar-btn">View Prompt</button>
+                    <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
                 </div>
             </NodeToolbar>
             <Handle type="target" position={Position.Left} className="handle-dot" />
@@ -142,6 +141,10 @@ export default memo(({ id, data, selected }) => {
                 }
                 .toolbar-btn:hover {
                     background: rgba(255,255,255,0.1);
+                }
+                .toolbar-btn.delete:hover {
+                    background: #ef4444;
+                    color: white;
                 }
 
                 .action-btn {

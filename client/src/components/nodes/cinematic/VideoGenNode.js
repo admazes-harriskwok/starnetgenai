@@ -10,8 +10,7 @@ export default memo(({ id, data, selected }) => {
             <NodeToolbar isVisible={selected} position={Position.Top}>
                 <div className="toolbar-wrapper">
                     <button className="toolbar-btn" onClick={() => data.onGenerate(id)}>Produce</button>
-                    <button className="toolbar-btn">⚙️</button>
-                    <button className="toolbar-btn">View Prompts</button>
+                    <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
                 </div>
             </NodeToolbar>
             <Handle type="target" position={Position.Left} className="handle-dot" />
@@ -141,6 +140,33 @@ export default memo(({ id, data, selected }) => {
                 .action-btn:hover:not(:disabled) { transform: translateY(-1px); box-shadow: 0 6px 15px rgba(255, 61, 113, 0.3); }
                 .action-btn:disabled { background: #E2E8F0; color: #94A3B8; cursor: not-allowed; box-shadow: none; }
                 :global(.handle-dot) { background: #ff3d71 !important; width: 10px !important; height: 10px !important; }
+                
+                .toolbar-wrapper {
+                    display: flex;
+                    gap: 4px;
+                    background: #0f172a;
+                    padding: 4px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+                    margin-bottom: 8px;
+                }
+                .toolbar-btn {
+                    background: transparent;
+                    border: none;
+                    color: white;
+                    font-size: 0.7rem;
+                    font-weight: 600;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                .toolbar-btn:hover {
+                    background: rgba(255,255,255,0.1);
+                }
+                .toolbar-btn.delete:hover {
+                    background: #ef4444;
+                    color: white;
+                }
             `}</style>
         </div>
     );

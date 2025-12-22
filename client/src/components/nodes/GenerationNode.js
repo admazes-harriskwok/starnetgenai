@@ -1,6 +1,6 @@
 "use client";
 import React, { memo, useState } from 'react';
-import { Handle, Position } from 'reactflow';
+import { Handle, Position, NodeToolbar } from 'reactflow';
 
 export default memo(({ id, data, selected }) => {
     const [prompt, setPrompt] = useState(data.prompt || '');
@@ -22,6 +22,12 @@ export default memo(({ id, data, selected }) => {
 
     return (
         <div className={`node-container ${selected ? 'selected' : ''}`}>
+            <NodeToolbar isVisible={selected} position={Position.Top}>
+                <div className="toolbar-wrapper">
+                    <button className="toolbar-btn" onClick={() => data.onGenerate(id, prompt)}>Generate</button>
+                    <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
+                </div>
+            </NodeToolbar>
             <Handle type="target" position={Position.Left} className="handle-dot" />
 
             <div className="node-header">
@@ -208,6 +214,33 @@ export default memo(({ id, data, selected }) => {
             width: 12px !important;
             height: 12px !important;
             border: 2px solid white !important;
+        }
+
+        .toolbar-wrapper {
+            display: flex;
+            gap: 4px;
+            background: #0f172a;
+            padding: 4px;
+            border-radius: 8px;
+            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+            margin-bottom: 8px;
+        }
+        .toolbar-btn {
+            background: transparent;
+            border: none;
+            color: white;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 4px 8px;
+            border-radius: 4px;
+            cursor: pointer;
+        }
+        .toolbar-btn:hover {
+            background: rgba(255,255,255,0.1);
+        }
+        .toolbar-btn.delete:hover {
+            background: #ef4444;
+            color: white;
         }
       `}</style>
         </div>

@@ -104,6 +104,11 @@ function CanvasInterface() {
         }));
     }, [setNodes]);
 
+    const onNodeDelete = useCallback((id) => {
+        setNodes((nds) => nds.filter((node) => node.id !== id));
+        setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
+    }, [setNodes, setEdges]);
+
     // Help convert any image (URL or Blob) to Base64 for the API
     const imageToBase64 = async (imageUrl) => {
         if (!imageUrl) return null;
@@ -804,7 +809,8 @@ Hard requirements:
                     onGenerate: isGen ? onGenerate : undefined,
                     onDataChange: onNodeDataChange,
                     onImageUpload: isMedia ? handleImageUpload : undefined,
-                    onExpand: (url) => setExpandedMedia(url)
+                    onExpand: (url) => setExpandedMedia(url),
+                    onDelete: onNodeDelete
                 }
             };
         });
@@ -817,7 +823,7 @@ Hard requirements:
                 reactFlowInstance.current?.setViewport(initialViewport);
             }, 100);
         }
-    }, [projectId, searchParams, onGenerate, onNodeDataChange, handleImageUpload, setNodes, setEdges]);
+    }, [projectId, searchParams, onGenerate, onNodeDataChange, onNodeDelete, handleImageUpload, setNodes, setEdges]);
 
     const addNode = useCallback((type) => {
         const id = `node_${Date.now()}`;
@@ -830,7 +836,8 @@ Hard requirements:
                 onGenerate: onGenerate,
                 onDataChange: onNodeDataChange,
                 onImageUpload: handleImageUpload,
-                onExpand: (url) => setExpandedMedia(url)
+                onExpand: (url) => setExpandedMedia(url),
+                onDelete: onNodeDelete
             },
         };
         setNodes((nds) => nds.concat(newNode));
