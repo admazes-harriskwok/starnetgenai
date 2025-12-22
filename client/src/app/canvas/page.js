@@ -96,9 +96,12 @@ function CanvasInterface() {
 
     // 3. Handlers
     const takeSnapshot = useCallback(() => {
-        setPast((prev) => [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }]);
-        setFuture([]); // Clear future on new action
-    }, [nodes, edges]);
+        setPast((prev) => [...prev, {
+            nodes: JSON.parse(JSON.stringify(nodesRef.current)),
+            edges: JSON.parse(JSON.stringify(edgesRef.current))
+        }]);
+        setFuture([]);
+    }, [nodesRef, edgesRef]);
 
     const onConnect = useCallback((params) => {
         takeSnapshot();
@@ -691,6 +694,7 @@ Hard requirements:
 
     // Handle Image Upload - Upload to server instead of Base64
     const handleImageUpload = useCallback(async (id, file) => {
+        if (!id || !file) return;
         console.log('📤 Uploading file for node:', id, file.name);
 
         // Show loading state
