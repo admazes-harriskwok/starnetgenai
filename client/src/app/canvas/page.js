@@ -981,9 +981,9 @@ Hard requirements:
                         </div>
                     )}
                     <Background variant="dots" gap={24} size={1} color="#e2e8f0" />
-                    <Controls showZoom={false} showFitView={false} showInteractive={false} position="top-left">
+                    <Controls position="top-left" showZoom={false} showFitView={false} showInteractive={false}>
                         <ControlButton onClick={openSelectorAtCenter} title="Add Node">
-                            <PlusIcon />
+                            <AddNodeIcon />
                         </ControlButton>
                         <ControlButton onClick={() => reactFlowInstance.current?.zoomIn()} title="Zoom In">
                             <span style={{ fontSize: '1.2rem', fontWeight: 'bold' }}>+</span>
@@ -995,7 +995,7 @@ Hard requirements:
                             <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>[ ]</span>
                         </ControlButton>
                     </Controls>
-                    <MiniMap position="top-right" style={{ borderRadius: 12, overflow: 'hidden', margin: '20px' }} />
+                    <MiniMap position="top-right" style={{ borderRadius: 12, overflow: 'hidden' }} />
                 </ReactFlow>
             </div>
 
@@ -1364,8 +1364,35 @@ Hard requirements:
                     background: #f97316;
                     color: white;
                 }
+
+                /* Move attribution and customize controls */
+                :global(.react-flow__attribution) {
+                    top: 10px !important;
+                    bottom: auto !important;
+                    background: rgba(255, 255, 255, 0.7) !important;
+                    padding: 2px 8px !important;
+                    border-top-right-radius: 0 !important;
+                    border-bottom-left-radius: 8px !important;
+                }
+
+                :global(.react-flow__controls) {
+                    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
+                    border: 1px solid #e2e8f0 !important;
+                    border-radius: 12px !important;
+                    overflow: hidden;
+                }
             `}</style>
         </div>
+    );
+}
+
+function AddNodeIcon() {
+    return (
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="3" y="3" width="18" height="18" rx="2" ry="2" fill="#f9731633" stroke="#f97316" />
+            <line x1="12" y1="8" x2="12" y2="16" stroke="#f97316"></line>
+            <line x1="8" y1="12" x2="16" y2="12" stroke="#f97316"></line>
+        </svg>
     );
 }
 

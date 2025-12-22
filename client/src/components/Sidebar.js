@@ -53,54 +53,56 @@ export default function Sidebar() {
 
       <style jsx>{`
         .sidebar {
-          width: 100%;
+          width: var(--sidebar-width);
           background: var(--bg-white);
-          height: 64px;
+          height: 100vh;
           position: fixed;
           left: 0;
           top: 0;
-          border-bottom: 1px solid var(--border-color);
+          border-right: 1px solid var(--border-color);
           display: flex;
-          align-items: center;
-          justify-content: space-between;
+          flex-direction: column;
           z-index: 100;
-          box-shadow: 0 1px 10px rgba(0,0,0,0.02);
-          padding: 0 24px;
+          box-shadow: 1px 0 10px rgba(0,0,0,0.02);
         }
         
         .logo-container {
+          height: var(--header-height);
           display: flex;
           align-items: center;
-          gap: 10px;
+          padding: 0 28px;
+          gap: 12px;
         }
 
         .logo-icon {
           color: var(--primary-start);
-          font-size: 20px;
+          font-size: 24px;
         }
 
         .logo-text {
           font-weight: 700;
-          font-size: 1.1rem;
+          font-size: 1.3rem;
           color: var(--text-heading);
           letter-spacing: -0.03em;
         }
 
         .nav-menu {
+          padding: 24px 16px;
           display: flex;
-          flex-direction: row;
-          gap: 4px;
-          align-items: center;
+          flex-direction: column;
+          gap: 8px; /* Breathing room */
+          flex: 1;
+          overflow-y: auto;
         }
 
         .nav-item {
           display: flex;
           align-items: center;
-          gap: 8px;
-          padding: 8px 12px;
+          gap: 12px;
+          padding: 12px 16px;
           border-radius: 8px;
           color: #64748B;
-          font-size: 13px;
+          font-size: 14px; /* text-sm */
           font-weight: 500;
           transition: all 0.2s ease-in-out;
         }
@@ -113,34 +115,36 @@ export default function Sidebar() {
         .nav-item.active {
           background-color: #FFF7ED;
           color: #F97316;
+          font-weight: 500;
         }
 
         .icon {
-          width: 16px;
-          height: 16px;
+          width: 20px;
+          height: 20px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
         .user-profile {
+            padding: 24px;
+            border-top: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            gap: 12px;
-            padding-left: 16px;
-            border-left: 1px solid var(--border-color);
+            gap: 16px;
+            background: var(--bg-white);
         }
 
         .avatar {
-            width: 32px;
-            height: 32px;
+            width: 40px;
+            height: 40px;
             background: linear-gradient(135deg, #eee, #ddd);
             color: var(--text-heading);
-            border-radius: 8px;
+            border-radius: 12px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.8rem;
+            font-size: 0.9rem;
             font-weight: 600;
         }
 
@@ -150,18 +154,32 @@ export default function Sidebar() {
         }
 
         .user-name {
-            font-size: 0.85rem;
+            font-size: 0.95rem;
             font-weight: 600;
             color: var(--text-heading);
         }
 
         .user-plan {
-            font-size: 0.7rem;
+            font-size: 0.75rem;
             color: var(--text-meta);
+            font-weight: 500;
         }
 
         .billing-link {
-            display: none; /* Hide in compact top bar */
+            background: none;
+            border: none;
+            color: var(--primary-start);
+            font-size: 0.7rem;
+            text-decoration: underline;
+            padding: 0;
+            margin-top: 4px;
+            cursor: pointer;
+            text-align: left;
+            transition: color 0.2s;
+        }
+
+        .billing-link:hover {
+            color: var(--primary-end);
         }
       `}</style>
     </aside>

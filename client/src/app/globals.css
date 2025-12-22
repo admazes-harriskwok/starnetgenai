@@ -2,30 +2,35 @@
   /* Design System: Colors */
   --bg-main: #F4F6F8;
   --bg-white: #FFFFFF;
-  
+
   /* Primary Action Gradient (Orange/Red-Orange) */
   --primary-start: #FF9A5A;
   --primary-end: #FF5E3A;
-  
+
   /* Secondary Brand Gradient (Purple-to-Pink) */
   --brand-start: #8A2387;
-  --brand-end: #E94057; /* or F27121 for 3-stop, but let's stick to 2-stop visual */
-  
+  --brand-end: #E94057;
+  /* or F27121 for 3-stop, but let's stick to 2-stop visual */
+
   /* Text Colors */
-  --text-heading: #1A1C1E; /* Dark Slate */
-  --text-body: #64748B;    /* Medium Gray */
-  --text-meta: #94A3B8;    /* Light Gray */
-  
+  --text-heading: #1A1C1E;
+  /* Dark Slate */
+  --text-body: #64748B;
+  /* Medium Gray */
+  --text-meta: #94A3B8;
+  /* Light Gray */
+
   /* Dimensions & Layout */
   --sidebar-width: 260px;
   --header-height: 80px;
   --border-radius-card: 16px;
-  --border-radius-btn: 30px; /* Pill shape */
-  
+  --border-radius-btn: 30px;
+  /* Pill shape */
+
   /* Shadows */
   --shadow-card: 0 4px 20px rgba(0, 0, 0, 0.04);
   --shadow-hover: 0 8px 30px rgba(0, 0, 0, 0.08);
-  
+
   /* Misc */
   --border-color: #E2E8F0;
 }
@@ -64,14 +69,13 @@ ul {
 
 .main-content {
   flex: 1;
-  margin-left: 0;
-  margin-top: 64px; /* Height of new Top Sidebar */
-  padding: 0; /* Remove padding for fullscreen canvas */
+  /* Sidebar is fixed, so we push content */
+  margin-left: var(--sidebar-width);
+  margin-top: var(--header-height);
+  padding: 40px;
   background-color: var(--bg-main);
-  min-height: calc(100vh - 64px);
+  min-height: calc(100vh - var(--header-height));
   transition: all 0.3s ease;
-  display: flex;
-  flex-direction: column;
 }
 
 /* --- Component Utilities --- */
@@ -82,7 +86,8 @@ ul {
   border-radius: var(--border-radius-card);
   padding: 24px;
   box-shadow: var(--shadow-card);
-  border: 1px solid rgba(255,255,255,0.5); /* subtle glow */
+  border: 1px solid rgba(255, 255, 255, 0.5);
+  /* subtle glow */
 }
 
 /* Primary Button (Gradient Pill) */
@@ -126,7 +131,10 @@ ul {
 }
 
 /* Headings */
-h1, h2, h3, h4 {
+h1,
+h2,
+h3,
+h4 {
   color: var(--text-heading);
   font-weight: 700;
   letter-spacing: -0.02em;

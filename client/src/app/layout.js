@@ -16,11 +16,14 @@ export default function RootLayout({ children }) {
         <link href="https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,400;500;600;700&display=swap" rel="stylesheet" />
       </head>
       <body>
-        <div className="main-layout" style={{ flexDirection: 'column' }}>
+        <div className="main-layout">
           <Sidebar />
-          <main className="main-content">
-            {children}
-          </main>
+          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+            <Header />
+            <main className="main-content">
+              {children}
+            </main>
+          </div>
         </div>
       </body>
     </html>
