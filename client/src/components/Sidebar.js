@@ -53,56 +53,54 @@ export default function Sidebar() {
 
       <style jsx>{`
         .sidebar {
-          width: var(--sidebar-width);
+          width: 100%;
           background: var(--bg-white);
-          height: 100vh;
+          height: 64px;
           position: fixed;
           left: 0;
           top: 0;
-          border-right: 1px solid var(--border-color);
+          border-bottom: 1px solid var(--border-color);
           display: flex;
-          flex-direction: column;
+          align-items: center;
+          justify-content: space-between;
           z-index: 100;
-          box-shadow: 1px 0 10px rgba(0,0,0,0.02);
+          box-shadow: 0 1px 10px rgba(0,0,0,0.02);
+          padding: 0 24px;
         }
         
         .logo-container {
-          height: var(--header-height);
           display: flex;
           align-items: center;
-          padding: 0 28px;
-          gap: 12px;
+          gap: 10px;
         }
 
         .logo-icon {
           color: var(--primary-start);
-          font-size: 24px;
+          font-size: 20px;
         }
 
         .logo-text {
           font-weight: 700;
-          font-size: 1.3rem;
+          font-size: 1.1rem;
           color: var(--text-heading);
           letter-spacing: -0.03em;
         }
 
         .nav-menu {
-          padding: 24px 16px;
           display: flex;
-          flex-direction: column;
-          gap: 8px; /* Breathing room */
-          flex: 1;
-          overflow-y: auto;
+          flex-direction: row;
+          gap: 4px;
+          align-items: center;
         }
 
         .nav-item {
           display: flex;
           align-items: center;
-          gap: 12px;
-          padding: 12px 16px;
+          gap: 8px;
+          padding: 8px 12px;
           border-radius: 8px;
           color: #64748B;
-          font-size: 14px; /* text-sm */
+          font-size: 13px;
           font-weight: 500;
           transition: all 0.2s ease-in-out;
         }
@@ -115,36 +113,34 @@ export default function Sidebar() {
         .nav-item.active {
           background-color: #FFF7ED;
           color: #F97316;
-          font-weight: 500;
         }
 
         .icon {
-          width: 20px;
-          height: 20px;
+          width: 16px;
+          height: 16px;
           display: flex;
           align-items: center;
           justify-content: center;
         }
 
         .user-profile {
-            padding: 24px;
-            border-top: 1px solid var(--border-color);
             display: flex;
             align-items: center;
-            gap: 16px;
-            background: var(--bg-white);
+            gap: 12px;
+            padding-left: 16px;
+            border-left: 1px solid var(--border-color);
         }
 
         .avatar {
-            width: 40px;
-            height: 40px;
+            width: 32px;
+            height: 32px;
             background: linear-gradient(135deg, #eee, #ddd);
             color: var(--text-heading);
-            border-radius: 12px;
+            border-radius: 8px;
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 0.9rem;
+            font-size: 0.8rem;
             font-weight: 600;
         }
 
@@ -154,32 +150,18 @@ export default function Sidebar() {
         }
 
         .user-name {
-            font-size: 0.95rem;
+            font-size: 0.85rem;
             font-weight: 600;
             color: var(--text-heading);
         }
 
         .user-plan {
-            font-size: 0.75rem;
+            font-size: 0.7rem;
             color: var(--text-meta);
-            font-weight: 500;
         }
 
         .billing-link {
-            background: none;
-            border: none;
-            color: var(--primary-start);
-            font-size: 0.7rem;
-            text-decoration: underline;
-            padding: 0;
-            margin-top: 4px;
-            cursor: pointer;
-            text-align: left;
-            transition: color 0.2s;
-        }
-
-        .billing-link:hover {
-            color: var(--primary-end);
+            display: none; /* Hide in compact top bar */
         }
       `}</style>
     </aside>

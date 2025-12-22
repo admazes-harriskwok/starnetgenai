@@ -353,13 +353,13 @@ Hard requirements:
             );
 
             let finalPrompt = customPrompt || connectedPrompt || targetNode.data.prompt;
-            let modelToUse = defaultModel || 'gemini-2.5-flash-image';
+            let modelToUse = defaultModel || 'gemini-3-pro-image';
 
             // Specialized Logic Per Node Type
             if (targetNode.type === 'aiAnalysis') {
                 if (inputImagesBase64.length === 0) throw new Error("Reference Image is required for analysis.");
                 finalPrompt = STORYBOARD_PROMPT;
-                modelToUse = 'gemini-2.5-flash-lite';
+                modelToUse = 'gemini-3-flash';
             } else if (targetNode.type === 'imageGen' || targetNode.type === 'aiImage') {
                 if (targetNode.type === 'imageGen' && !inputAnalysis) {
                     throw new Error("Director AI analysis is required first.");
@@ -371,7 +371,7 @@ Hard requirements:
                         finalPrompt = `Create a 3x3 Grid Contact Sheet based on these keyframes: ${sheetDesc}. Keep visual consistency with the reference image style.`;
                     }
                 }
-                modelToUse = 'gemini-2.5-flash-image';
+                modelToUse = 'gemini-3-pro-image';
             } else if (targetNode.type === 'imageSplitter') {
                 // Find storyboard grid source and original reference
                 const allNodes = nodesRef.current;
@@ -395,7 +395,7 @@ Hard requirements:
                     body: JSON.stringify({
                         prompt: SPLITTER_ANALYSIS_PROMPT,
                         apiKey,
-                        model: 'gemini-2.5-flash-image',
+                        model: 'gemini-3-pro-image',
                         images: [refBase64, gridBase64] // Original Ref + Storyboard Grid
                     })
                 });
@@ -419,7 +419,7 @@ Hard requirements:
                         body: JSON.stringify({
                             prompt: prompt,
                             apiKey,
-                            model: 'gemini-2.5-flash-image',
+                            model: 'gemini-3-pro-image',
                             images: [refBase64] // Match with original reference for perfect continuity
                         })
                     }).then(res => res.json())
@@ -981,7 +981,7 @@ Hard requirements:
                         </div>
                     )}
                     <Background variant="dots" gap={24} size={1} color="#e2e8f0" />
-                    <Controls showZoom={false} showFitView={false} showInteractive={false}>
+                    <Controls showZoom={false} showFitView={false} showInteractive={false} position="top-left">
                         <ControlButton onClick={openSelectorAtCenter} title="Add Node">
                             <PlusIcon />
                         </ControlButton>
@@ -995,7 +995,7 @@ Hard requirements:
                             <span style={{ fontSize: '0.8rem', fontWeight: 'bold' }}>[ ]</span>
                         </ControlButton>
                     </Controls>
-                    <MiniMap style={{ borderRadius: 12, overflow: 'hidden' }} />
+                    <MiniMap position="top-right" style={{ borderRadius: 12, overflow: 'hidden', margin: '20px' }} />
                 </ReactFlow>
             </div>
 

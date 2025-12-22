@@ -3,7 +3,7 @@ import React, { useState, useEffect } from 'react';
 
 export default function SettingsPage() {
     const [apiKey, setApiKey] = useState('');
-    const [model, setModel] = useState('gemini-2.5-flash-image');
+    const [model, setModel] = useState('gemini-3-pro-image');
     const [status, setStatus] = useState('');
 
     useEffect(() => {
@@ -46,8 +46,8 @@ export default function SettingsPage() {
                 <div className="form-group">
                     <label>Model Selection</label>
                     <select value={model} onChange={(e) => setModel(e.target.value)}>
-                        <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Nano Banana)</option>
-                        <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                        <option value="gemini-3-pro-image">Gemini 3 Pro Image (Nano Banana)</option>
+                        <option value="gemini-3-flash">Gemini 3 Flash</option>
                         <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                     </select>
                 </div>
