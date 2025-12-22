@@ -924,9 +924,6 @@ Hard requirements:
                 </div>
 
                 <div className="header-actions">
-                    <button className="tool-btn" onClick={() => onAlign('horizontal')}>Align H</button>
-                    <button className="tool-btn" onClick={() => onAlign('vertical')}>Align V</button>
-                    <button className="tool-btn" onClick={onGroup}>Group</button>
                     <div className="credit-pill">
                         🪙 {credits}
                     </div>
