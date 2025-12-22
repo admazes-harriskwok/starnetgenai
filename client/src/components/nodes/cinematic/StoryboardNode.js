@@ -44,6 +44,13 @@ export default memo(({ id, data, selected }) => {
                     />
                 </div>
 
+                {data.usedPrompt && (
+                    <div className="used-prompt-section">
+                        <label>Active Generated Prompt</label>
+                        <p>{data.usedPrompt}</p>
+                    </div>
+                )}
+
                 <button
                     className="action-btn"
                     onClick={() => data.onGenerate(id)}
@@ -119,6 +126,31 @@ export default memo(({ id, data, selected }) => {
                     outline: none;
                 }
                 .prompt-editor:focus { border-color: #785df2; background: white; }
+
+                .used-prompt-section {
+                    background: #f8fafc;
+                    padding: 10px;
+                    border-radius: 8px;
+                    border-left: 3px solid #785df2;
+                }
+                .used-prompt-section label {
+                    display: block;
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    color: #785df2;
+                    text-transform: uppercase;
+                    margin-bottom: 4px;
+                }
+                .used-prompt-section p {
+                    margin: 0;
+                    font-size: 0.75rem;
+                    color: #475569;
+                    line-height: 1.4;
+                    display: -webkit-box;
+                    -webkit-line-clamp: 3;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
+                }
 
                 .toolbar-wrapper {
                     display: flex;

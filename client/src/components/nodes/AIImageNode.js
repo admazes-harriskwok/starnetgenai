@@ -20,8 +20,9 @@ export default memo(({ id, data, selected }) => {
 
             <div className="node-content">
                 {data.output ? (
-                    <div className="output-wrapper">
+                    <div className="output-wrapper" onClick={() => data.onExpand && data.onExpand(data.output)}>
                         <img src={data.output} alt="Generated" className="gen-media" />
+                        <div className="expand-hint">Click to Save / View</div>
                     </div>
                 ) : (
                     <div className="gen-placeholder">
@@ -30,6 +31,13 @@ export default memo(({ id, data, selected }) => {
                         ) : (
                             <p>Connect prompt to generate</p>
                         )}
+                    </div>
+                )}
+
+                {data.usedPrompt && (
+                    <div className="used-prompt-section">
+                        <label>Generated with Prompt:</label>
+                        <p>{data.usedPrompt}</p>
                     </div>
                 )}
 
@@ -79,11 +87,58 @@ export default memo(({ id, data, selected }) => {
                     border-radius: 8px;
                     overflow: hidden;
                     background: #f8fafc;
+                    position: relative;
+                    cursor: pointer;
+                    transition: transform 0.2s;
+                    border: 1px solid #e2e8f0;
+                }
+                .output-wrapper:hover {
+                    transform: scale(1.02);
+                }
+                .expand-hint {
+                    position: absolute;
+                    inset: 0;
+                    background: rgba(139, 92, 246, 0.4);
+                    color: white;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    font-size: 0.75rem;
+                    font-weight: 700;
+                    opacity: 0;
+                    transition: opacity 0.2s;
+                }
+                .output-wrapper:hover .expand-hint {
+                    opacity: 1;
                 }
                 .gen-media {
                     width: 100%;
                     height: 100%;
                     object-fit: cover;
+                }
+                .used-prompt-section {
+                    background: #f8fafc;
+                    padding: 10px;
+                    border-radius: 8px;
+                    border-left: 3px solid #8b5cf6;
+                }
+                .used-prompt-section label {
+                    display: block;
+                    font-size: 0.65rem;
+                    font-weight: 700;
+                    color: #8b5cf6;
+                    text-transform: uppercase;
+                    margin-bottom: 4px;
+                }
+                .used-prompt-section p {
+                    margin: 0;
+                    font-size: 0.75rem;
+                    color: #475569;
+                    line-height: 1.4;
+                    display: -webkit-box;
+                    -webkit-line-clamp: 3;
+                    -webkit-box-orient: vertical;
+                    overflow: hidden;
                 }
                 .gen-placeholder {
                     height: 150px;
