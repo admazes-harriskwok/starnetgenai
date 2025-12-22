@@ -91,23 +91,35 @@ function CanvasInterface() {
     const [selectedRatios, setSelectedRatios] = useState(['9:16']);
     const [isExporting, setIsExporting] = useState(false);
     const [selectorPos, setSelectorPos] = useState({ x: 100, y: 100 });
+    const [past, setPast] = useState([]);
+    const [future, setFuture] = useState([]);
 
     // 3. Handlers
-    const onConnect = useCallback((params) => setEdges((eds) => addEdge(params, eds)), [setEdges]);
+    const takeSnapshot = useCallback(() => {
+        setPast((prev) => [...prev, { nodes: JSON.parse(JSON.stringify(nodes)), edges: JSON.parse(JSON.stringify(edges)) }]);
+        setFuture([]); // Clear future on new action
+    }, [nodes, edges]);
+
+    const onConnect = useCallback((params) => {
+        takeSnapshot();
+        setEdges((eds) => addEdge(params, eds));
+    }, [setEdges, takeSnapshot]);
 
     const onNodeDataChange = useCallback((id, newData) => {
+        takeSnapshot();
         setNodes((nds) => nds.map((node) => {
             if (node.id === id) {
                 return { ...node, data: { ...node.data, ...newData } };
             }
             return node;
         }));
-    }, [setNodes]);
+    }, [setNodes, takeSnapshot]);
 
     const onNodeDelete = useCallback((id) => {
+        takeSnapshot();
         setNodes((nds) => nds.filter((node) => node.id !== id));
         setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
-    }, [setNodes, setEdges]);
+    }, [setNodes, setEdges, takeSnapshot]);
 
     // Help convert any image (URL or Blob) to Base64 for the API
     const imageToBase64 = async (imageUrl) => {
@@ -358,7 +370,7 @@ Hard requirements:
             );
 
             let finalPrompt = customPrompt || connectedPrompt || targetNode.data.prompt;
-            let modelToUse = defaultModel || 'gemini-3-pro-image';
+            let modelToUse = defaultModel || 'gemini-2.5-flash-image';
 
             // Specialized Logic Per Node Type
             if (targetNode.type === 'aiAnalysis') {
@@ -376,7 +388,7 @@ Hard requirements:
                         finalPrompt = `Create a 3x3 Grid Contact Sheet based on these keyframes: ${sheetDesc}. Keep visual consistency with the reference image style.`;
                     }
                 }
-                modelToUse = 'gemini-3-pro-image';
+                modelToUse = 'gemini-2.5-flash-image';
             } else if (targetNode.type === 'imageSplitter') {
                 // Find storyboard grid source and original reference
                 const allNodes = nodesRef.current;
@@ -400,7 +412,7 @@ Hard requirements:
                     body: JSON.stringify({
                         prompt: SPLITTER_ANALYSIS_PROMPT,
                         apiKey,
-                        model: 'gemini-3-pro-image',
+                        model: 'gemini-2.5-flash-image',
                         images: [refBase64, gridBase64] // Original Ref + Storyboard Grid
                     })
                 });
@@ -424,7 +436,7 @@ Hard requirements:
                         body: JSON.stringify({
                             prompt: prompt,
                             apiKey,
-                            model: 'gemini-3-pro-image',
+                            model: 'gemini-2.5-flash-image',
                             images: [refBase64] // Match with original reference for perfect continuity
                         })
                     }).then(res => res.json())
@@ -730,6 +742,47 @@ Hard requirements:
         }
     }, [saveProject, setNodes]);
 
+    const applyCallbacks = useCallback((nds) => nds.map(node => {
+        const isMedia = ['media', 'source', 'sourceUpload'].includes(node.type);
+        const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter'].includes(node.type);
+
+        return {
+            ...node,
+            data: {
+                ...node.data,
+                onGenerate: isGen ? onGenerate : undefined,
+                onDataChange: onNodeDataChange,
+                onImageUpload: isMedia ? handleImageUpload : undefined,
+                onExpand: (url) => setExpandedMedia(url),
+                onDelete: onNodeDelete
+            }
+        };
+    }), [onGenerate, onNodeDataChange, handleImageUpload, onNodeDelete]);
+
+    const undo = useCallback(() => {
+        if (past.length === 0) return;
+        const previous = past[past.length - 1];
+        const newPast = past.slice(0, past.length - 1);
+
+        setFuture((prev) => [{ nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edges)) }, ...prev]);
+        setPast(newPast);
+
+        setNodes(applyCallbacks(previous.nodes));
+        setEdges(previous.edges);
+    }, [past, nodesRef, edges, setNodes, setEdges, applyCallbacks]);
+
+    const redo = useCallback(() => {
+        if (future.length === 0) return;
+        const next = future[0];
+        const newFuture = future.slice(1);
+
+        setPast((prev) => [...prev, { nodes: JSON.parse(JSON.stringify(nodesRef.current)), edges: JSON.parse(JSON.stringify(edges)) }]);
+        setFuture(newFuture);
+
+        setNodes(applyCallbacks(next.nodes));
+        setEdges(next.edges);
+    }, [future, nodesRef, edges, setNodes, setEdges, applyCallbacks]);
+
     const onDragOver = useCallback((event) => {
         event.preventDefault();
         event.dataTransfer.dropEffect = 'copy';
@@ -798,23 +851,6 @@ Hard requirements:
 
         setProjectName(name);
 
-        const applyCallbacks = (nds) => nds.map(node => {
-            const isMedia = ['media', 'source', 'sourceUpload'].includes(node.type);
-            const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter'].includes(node.type);
-
-            return {
-                ...node,
-                data: {
-                    ...node.data,
-                    onGenerate: isGen ? onGenerate : undefined,
-                    onDataChange: onNodeDataChange,
-                    onImageUpload: isMedia ? handleImageUpload : undefined,
-                    onExpand: (url) => setExpandedMedia(url),
-                    onDelete: onNodeDelete
-                }
-            };
-        });
-
         setNodes(applyCallbacks(initialNodes));
         setEdges(initialEdges);
 
@@ -826,6 +862,7 @@ Hard requirements:
     }, [projectId, searchParams, onGenerate, onNodeDataChange, onNodeDelete, handleImageUpload, setNodes, setEdges]);
 
     const addNode = useCallback((type) => {
+        takeSnapshot();
         const id = `node_${Date.now()}`;
         const newNode = {
             id: id,
@@ -931,6 +968,8 @@ Hard requirements:
                 </div>
 
                 <div className="header-actions">
+                    <button className="tool-btn secondary" onClick={undo} disabled={past.length === 0}>↩️ Undo</button>
+                    <button className="tool-btn secondary" onClick={redo} disabled={future.length === 0}>↪️ Redo</button>
                     <div className="credit-pill">
                         🪙 {credits}
                     </div>
@@ -1377,6 +1416,21 @@ Hard requirements:
                     padding: 2px 8px !important;
                     border-top-right-radius: 0 !important;
                     border-bottom-left-radius: 8px !important;
+                }
+
+                .tool-btn.secondary {
+                    background: #f1f5f9;
+                    color: #64748b;
+                    border: 1px solid #e2e8f0;
+                    margin-right: 8px;
+                }
+                .tool-btn.secondary:hover:not(:disabled) {
+                    background: #e2e8f0;
+                    color: #0f172a;
+                }
+                .tool-btn.secondary:disabled {
+                    opacity: 0.5;
+                    cursor: not-allowed;
                 }
 
                 :global(.react-flow__controls) {

@@ -33,7 +33,7 @@ export async function POST(request) {
         }
 
         // Default to the requested model
-        const model = userModel || 'gemini-3-pro-image';
+        const model = userModel || 'gemini-2.5-flash-image';
 
         // Determine if this is a text-focused model or a video-focused LRO model
         const isTextModel = model.includes('flash') || model.includes('pro-text') || model.includes('pro-vision') && !model.includes('image');
