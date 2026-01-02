@@ -41,7 +41,10 @@ export default memo(({ id, data, selected }) => {
                         placeholder="Ask anything..."
                         className="chat-input"
                     />
-                    <button className="send-btn">Send</button>
+                    <button className="send-btn" onClick={() => {
+                        data.onGenerate(id, input);
+                        setInput('');
+                    }}>Send</button>
                 </div>
             </div>
 

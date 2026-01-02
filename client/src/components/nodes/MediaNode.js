@@ -25,6 +25,11 @@ export default memo(({ id, data, selected }) => {
                     <button className="toolbar-btn" onClick={onBoxClick}>
                         {data.image || data.video ? 'Replace' : 'Upload'}
                     </button>
+                    {(data.image || data.video) && (
+                        <button className="toolbar-btn" onClick={() => data.onExpand && data.onExpand(data.image || data.video)}>
+                            ⛶ Zoom
+                        </button>
+                    )}
                     <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
                 </div>
             </NodeToolbar>

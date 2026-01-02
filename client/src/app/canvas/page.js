@@ -27,6 +27,7 @@ import StoryboardNode from '../../components/nodes/cinematic/StoryboardNode';
 import FrameSplitterNode from '../../components/nodes/cinematic/FrameSplitterNode';
 import VideoGenNode from '../../components/nodes/cinematic/VideoGenNode';
 import ExportHandlerNode from '../../components/nodes/cinematic/ExportHandlerNode';
+import InstructionNode from '../../components/nodes/InstructionNode';
 
 const nodeTypes = {
     source: MediaNode,
@@ -42,6 +43,7 @@ const nodeTypes = {
     imageSplitter: FrameSplitterNode,
     videoGen: VideoGenNode,
     exportHandler: ExportHandlerNode,
+    instruction: InstructionNode,
 };
 
 function CanvasInterface() {
@@ -181,7 +183,9 @@ function CanvasInterface() {
                 // Remove function references
                 onGenerate: undefined,
                 onDataChange: undefined,
-                onImageUpload: undefined
+                onImageUpload: undefined,
+                onExpand: undefined,
+                onDelete: undefined
             }
         }));
 
@@ -324,6 +328,8 @@ Hard requirements:
         if (targetNode.type === 'imageSplitter') cost = 5;
         if (targetNode.type === 'videoGen') cost = 10;
         if (targetNode.type === 'aiAnalysis') cost = 1;
+        if (targetNode.type === 'assistant') cost = 1;
+        if (targetNode.type === 'text') cost = 1;
 
         if (creditsRef.current < cost) {
             alert(`Insufficient credits! This operation costs ${cost} 🪙.`);
@@ -343,54 +349,60 @@ Hard requirements:
             const { apiKey, model: defaultModel } = config;
             let data;
 
+            const getAllUpstreamData = (nodeId, visited = new Set()) => {
+                if (visited.has(nodeId)) return { images: [], texts: [], analysis: null, frames: [] };
+                visited.add(nodeId);
+
+                const incoming = edgesRef.current.filter(e => e.target === nodeId);
+                let results = { images: [], texts: [], analysis: null, frames: [] };
+
+                for (const edge of incoming) {
+                    const sn = nodesRef.current.find(n => n.id === edge.source);
+                    if (!sn) continue;
+
+                    // 1. Collect Data from immediate source
+                    const img = sn.data.output || sn.data.image;
+                    if (img) results.images.push({ id: sn.id, image: img });
+
+                    const textVal = sn.data.text || (sn.data.output && typeof sn.data.output === 'string' ? sn.data.output : null);
+                    if (textVal && textVal.length > 5 && !results.texts.includes(textVal)) {
+                        results.texts.push(textVal);
+                    }
+
+                    if (sn.data.analysis) results.analysis = sn.data.analysis;
+                    if (sn.data.frames) results.frames = sn.data.frames;
+
+                    // 2. Recurse to gather all ancestors
+                    const upstream = getAllUpstreamData(sn.id, visited);
+                    results.images = [...results.images, ...upstream.images];
+                    results.texts = [...new Set([...results.texts, ...upstream.texts])];
+                    if (!results.analysis) results.analysis = upstream.analysis;
+                    if (!results.frames) results.frames = upstream.frames;
+                }
+                return results;
+            };
+
             const incomingEdges = edgesRef.current.filter(e => e.target === id);
-            const sourceNodes = incomingEdges.map(e => {
-                return nodesRef.current.find(n => n.id === e.source);
-            }).filter(node => node);
+            const sourceNodes = incomingEdges.map(e => nodesRef.current.find(n => n.id === e.source)).filter(Boolean);
+            const upstreamData = getAllUpstreamData(id);
 
-            const inputImagesRaw = [];
-            let inputAnalysis = null;
-            let hdImages = null;
-            let connectedPrompt = null;
-
-            for (const sn of sourceNodes) {
-                const img = sn.data.output || sn.data.image;
-                if (img) {
-                    inputImagesRaw.push({ id: sn.id, label: sn.data.label || sn.id, image: img });
-                }
-                if (sn.data.analysis) {
-                    inputAnalysis = sn.data.analysis;
-                }
-                if (sn.data.frames) {
-                    hdImages = sn.data.frames;
-                }
-                if (sn.type === 'text' && sn.data.text) {
-                    connectedPrompt = sn.data.text;
-                }
-            }
-
-            // Find missing inputs by traversing further back if needed (for templates)
-            if (!inputAnalysis || !hdImages) {
-                const allNodes = nodesRef.current;
-                const analysisNode = allNodes.find(n => n.type === 'aiAnalysis' && n.data.analysis);
-                const splitterNode = allNodes.find(n => n.type === 'imageSplitter' && n.data.frames);
-
-                if (analysisNode && !inputAnalysis) inputAnalysis = analysisNode.data.analysis;
-                if (splitterNode && !hdImages) hdImages = splitterNode.data.frames;
-            }
+            const inputImagesRaw = Array.from(new Map(upstreamData.images.map(item => [item.id, item])).values());
+            let inputAnalysis = upstreamData.analysis;
+            let hdImages = upstreamData.frames;
+            let connectedPrompt = upstreamData.texts.reverse().join('\n\n'); // Prioritize distant context, closest text at bottom
 
             const inputImagesBase64 = await Promise.all(
                 inputImagesRaw.map(item => imageToBase64(item.image))
             );
 
-            let finalPrompt = customPrompt || connectedPrompt || targetNode.data.prompt;
+            let finalPrompt = customPrompt || connectedPrompt || targetNode.data.prompt || targetNode.data.aiPlaceholder;
             let modelToUse = defaultModel || 'gemini-2.5-flash-image';
 
             // Specialized Logic Per Node Type
-            if (targetNode.type === 'aiAnalysis') {
-                if (inputImagesBase64.length === 0) throw new Error("Reference Image is required for analysis.");
-                finalPrompt = targetNode.data.prompt || STORYBOARD_PROMPT;
-                modelToUse = 'gemini-3-flash';
+            if (targetNode.type === 'aiAnalysis' || targetNode.type === 'assistant' || targetNode.type === 'text') {
+                if (targetNode.type === 'aiAnalysis' && inputImagesBase64.length === 0) throw new Error("Reference Image is required for analysis.");
+                finalPrompt = customPrompt || targetNode.data.prompt || targetNode.data.aiPlaceholder || (targetNode.type === 'aiAnalysis' ? STORYBOARD_PROMPT : "");
+                modelToUse = 'gemini-2.5-flash-lite';
             } else if (targetNode.type === 'imageGen' || targetNode.type === 'aiImage') {
                 if (targetNode.type === 'imageGen' && !inputAnalysis) {
                     throw new Error("Director AI analysis is required first.");
@@ -403,7 +415,10 @@ Hard requirements:
                     }
                 }
                 modelToUse = 'gemini-2.5-flash-image';
-            } else if (targetNode.type === 'imageSplitter') {
+            }
+
+            // 2. Generation Work
+            if (targetNode.type === 'imageSplitter') {
                 // Find storyboard grid source and original reference
                 const allNodes = nodesRef.current;
                 const storyboardNode = sourceNodes.find(n => n.type === 'imageGen' || (n.data.output && !n.data.frames));
@@ -630,6 +645,8 @@ Hard requirements:
                 }
             }
 
+            if (!data) throw new Error("Generation failed to produce output. Please try again.");
+
             // Skip credit deduction if its a batch since it happened or we skip for now 
             // (Standard credits logic applies below)
             setCredits((c) => Math.max(0, c - cost));
@@ -669,6 +686,12 @@ Hard requirements:
                     } else if (targetNode.type === 'videoGen') {
                         updatedData.clips = data.clips;
                         updatedData.output = data.clips[0];
+                    } else if (targetNode.type === 'assistant') {
+                        const userMsg = { role: 'user', content: customPrompt || targetNode.data.prompt || "Hello" };
+                        const aiMsg = { role: 'assistant', content: data.text || data.output };
+                        updatedData.history = [...(node.data.history || []), userMsg, aiMsg];
+                    } else if (targetNode.type === 'text') {
+                        updatedData.text = data.text || data.output;
                     } else {
                         updatedData.output = data.output;
                         updatedData.usedPrompt = finalPrompt;
@@ -702,6 +725,26 @@ Hard requirements:
             }));
         }
     }, [saveProject, checkBillingPlan]);
+
+    // Generate All Logic
+    const onGenerateAll = useCallback(async () => {
+        const genNodes = nodesRef.current.filter(n =>
+            ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter'].includes(n.type)
+        );
+
+        if (genNodes.length === 0) {
+            alert("No generation nodes found to run.");
+            return;
+        }
+
+        if (confirm(`Run workflow for all ${genNodes.length} generation nodes?`)) {
+            for (const node of genNodes) {
+                // We should ideally run in topological order, but for simplicity we run all
+                // If they have dependencies, the onGenerate logic might handle it or we might need order
+                await onGenerate(node.id);
+            }
+        }
+    }, [onGenerate]);
 
     // Handle Image Upload - Upload to server instead of Base64
     const handleImageUpload = useCallback(async (id, file) => {
@@ -758,8 +801,8 @@ Hard requirements:
     }, [saveProject, setNodes]);
 
     const applyCallbacks = useCallback((nds) => nds.map(node => {
-        const isMedia = ['media', 'source', 'sourceUpload'].includes(node.type);
-        const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter'].includes(node.type);
+        const isMedia = ['media', 'source', 'sourceUpload', 'instruction'].includes(node.type);
+        const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter', 'assistant', 'text'].includes(node.type);
 
         return {
             ...node,
@@ -983,6 +1026,9 @@ Hard requirements:
                 </div>
 
                 <div className="header-actions">
+                    <button className="tool-btn" onClick={onGenerateAll} style={{ background: '#3b82f6', color: 'white', border: 'none' }}>
+                        ▶ Generate All
+                    </button>
                     <button className="tool-btn secondary" onClick={undo} disabled={past.length === 0}>↩️ Undo</button>
                     <button className="tool-btn secondary" onClick={redo} disabled={future.length === 0}>↪️ Redo</button>
                     <div className="credit-pill">

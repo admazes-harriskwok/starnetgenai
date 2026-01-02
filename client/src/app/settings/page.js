@@ -47,7 +47,7 @@ export default function SettingsPage() {
                     <label>Model Selection</label>
                     <select value={model} onChange={(e) => setModel(e.target.value)}>
                         <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</option>
-                        <option value="gemini-3-flash">Gemini 3 Flash</option>
+                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
                         <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
                     </select>
                 </div>
