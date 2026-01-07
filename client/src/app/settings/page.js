@@ -3,18 +3,21 @@ import React, { useState, useEffect } from 'react';
 
 export default function SettingsPage() {
     const [apiKey, setApiKey] = useState('');
-    const [model, setModel] = useState('gemini-2.5-flash-image');
+    const [model, setModel] = useState('gemini-3-flash');
+    const [imageModel, setImageModel] = useState('gemini-2.5-flash-image');
+    const [videoModel, setVideoModel] = useState('veo-2.0-generate-001');
     const [status, setStatus] = useState('');
 
     useEffect(() => {
-        // Load from local storage
         const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
         if (config.apiKey) setApiKey(config.apiKey);
         if (config.model) setModel(config.model);
+        if (config.imageModel) setImageModel(config.imageModel);
+        if (config.videoModel) setVideoModel(config.videoModel);
     }, []);
 
     const handleSave = () => {
-        const config = { apiKey, model };
+        const config = { apiKey, model, imageModel, videoModel };
         localStorage.setItem('starnet_config', JSON.stringify(config));
         setStatus('Settings saved successfully!');
         setTimeout(() => setStatus(''), 3000);
@@ -44,11 +47,33 @@ export default function SettingsPage() {
                 </div>
 
                 <div className="form-group">
-                    <label>Model Selection</label>
+                    <label>Text & Analysis Model</label>
                     <select value={model} onChange={(e) => setModel(e.target.value)}>
-                        <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image</option>
-                        <option value="gemini-2.5-flash-lite">Gemini 2.5 Flash Lite</option>
-                        <option value="gemini-1.5-pro">Gemini 1.5 Pro</option>
+                        <option value="gemini-3-flash">Gemini 3 Flash (Fastest)</option>
+                        <option value="gemini-3-pro">Gemini 3 Pro (Most Intelligent)</option>
+                        <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                        <option value="gemini-1.5-pro">Gemini 1.5 Pro (Legacy)</option>
+                    </select>
+                </div>
+
+                <div className="form-group">
+                    <label>Image Generation Model</label>
+                    <select value={imageModel} onChange={(e) => setImageModel(e.target.value)}>
+                        <option value="gemini-2.5-flash-image-preview">Gemini 2.5 Flash Image Preview</option>
+                        <option value="gemini-2.5-flash-image">Gemini 2.5 Flash Image (Balanced)</option>
+                        <option value="gemini-3-pro-image-preview">Gemini 3 Pro Image Preview (Ultra Quality)</option>
+                        <option value="nano-banana-pro-preview">Nano Banana Pro Preview</option>
+                    </select>
+                </div>
+
+                <div className="form-group">
+                    <label>Video Generation Model</label>
+                    <select value={videoModel} onChange={(e) => setVideoModel(e.target.value)}>
+                        <option value="veo-2.0-generate-001">Veo 2.0 (Stable)</option>
+                        <option value="veo-3.0-fast-generate-001">Veo 3.0 Fast (Rapid Preview)</option>
+                        <option value="veo-3.1-generate-preview">Veo 3.1 Preview (Experimental)</option>
+                        <option value="veo-3.1-fast-generate-preview">Veo 3.1 Fast (Ultra Fast)</option>
                     </select>
                 </div>
 

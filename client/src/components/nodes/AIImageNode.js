@@ -1,6 +1,7 @@
 "use client";
 import React, { memo } from 'react';
 import { Handle, Position, NodeToolbar } from 'reactflow';
+import { getDisplayName } from '../../lib/models';
 
 export default memo(({ id, data, selected }) => {
     return (
@@ -48,10 +49,12 @@ export default memo(({ id, data, selected }) => {
                         <button className="tool-btn-square mag">
                             <span className="wand">🪄</span>
                         </button>
-                        <div className="ref-image-mini">
-                            <img src="https://images.unsplash.com/photo-1542496658-e33a6d0d50f6?w=50" alt="ref" />
-                            <span className="badge">1</span>
-                        </div>
+                        {data.refImage && (
+                            <div className="ref-image-mini">
+                                <img src={data.refImage} alt="ref" />
+                                <span className="badge">1</span>
+                            </div>
+                        )}
                     </div>
                     <div className="input-middle">
                         <textarea
@@ -63,20 +66,30 @@ export default memo(({ id, data, selected }) => {
                         />
                     </div>
                     <div className="input-bottom">
-                        <div className="model-selector">
+                        <div className="model-selector" onClick={() => data.onModelToggle(id, data.model || 'nano-banana-pro-preview')}>
                             <span className="g-icon">B</span>
-                            Image Flash
+                            {getDisplayName(data.model || 'nano-banana-pro-preview')}
                             <span className="chevron">⌄</span>
                         </div>
                         <div className="actions-right">
-                            <div className="ratio-badge">16:9</div>
+                            <div
+                                className="ratio-badge clickable"
+                                onClick={() => {
+                                    const ratios = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
+                                    const current = data.aspectRatio || '1:1';
+                                    const nextIdx = (ratios.indexOf(current) + 1) % ratios.length;
+                                    data.onDataChange(id, { aspectRatio: ratios[nextIdx] });
+                                }}
+                            >
+                                {data.aspectRatio || '1:1'}
+                            </div>
                             <button className="cam-btn">📷 Camera Control</button>
                             <span className="ratio-text">1x</span>
                             <div className="credit-cost">
                                 <span className="coin">🪙</span>
                                 4
                             </div>
-                            <button className="send-btn" onClick={() => data.onGenerate(id)}>
+                            <button className="send-btn" onClick={() => data.onGenerate(id, data.prompt)}>
                                 <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor">
                                     <path d="M2.01 21L23 12 2.01 3 2 10l15 2-15 2z" />
                                 </svg>
@@ -282,7 +295,10 @@ export default memo(({ id, data, selected }) => {
                     border-radius: 6px;
                     font-size: 0.7rem;
                     font-weight: 700;
+                    user-select: none;
                 }
+                .ratio-badge.clickable { cursor: pointer; transition: all 0.2s; }
+                .ratio-badge.clickable:hover { border-color: #f97316; color: #f97316; background: #fff7ed; }
                 .cam-btn {
                     background: transparent;
                     border: none;

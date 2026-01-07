@@ -34,6 +34,8 @@ export default function DashboardPage() {
         { id: 'cinematic-video', name: 'Cinematic Ad', type: '16:9', category: 'Video' },
         { id: 'ugc-testimonial', name: 'UGC Testimonial', type: '9:16', category: 'Marketing' },
         { id: 'seasonal-showcase', name: 'Seasonal Showcase', type: '1:1', category: 'E-commerce' },
+        { id: 'skincare-hand-showcase', name: 'Skincare Video', type: 'Dynamic', category: 'Premium', thumbnail: 'https://images.unsplash.com/photo-1556228720-195a672e8a03?auto=format&fit=crop&q=80&w=400' },
+        { id: 'vertical-ad-suite', name: 'Vertical Ad Suite', type: 'IAB Vertical', category: 'Marketing', thumbnail: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400' },
     ];
 
     // ... (keep filters logic)
@@ -62,6 +64,16 @@ export default function DashboardPage() {
                         <span className="sale-sub">YEAR-END SALE</span>
                     </div>
                     <div className="format-badge">1:1</div>
+                </div>
+            );
+        }
+        if (template.id === 'vertical-ad-suite') {
+            return (
+                <div className="preview-vertical-suite">
+                    <div className="v-column"></div>
+                    <div className="v-column main"></div>
+                    <div className="v-column"></div>
+                    <div className="v-label">IAB VERTICAL</div>
                 </div>
             );
         }
@@ -627,6 +639,39 @@ export default function DashboardPage() {
                     border-radius: 6px;
                     font-weight: 600;
                     text-transform: uppercase;
+                }
+
+                /* Vertical Suite Preview */
+                .preview-vertical-suite {
+                    width: 100%;
+                    height: 100%;
+                    background: #0f172a;
+                    display: flex;
+                    justify-content: center;
+                    gap: 6px;
+                    padding: 20px 10px;
+                    position: relative;
+                }
+                .v-column {
+                    width: 15%;
+                    height: 100%;
+                    background: rgba(255,255,255,0.1);
+                    border-radius: 4px;
+                }
+                .v-column.main {
+                    width: 30%;
+                    background: linear-gradient(to bottom, #3b82f6, #60a5fa);
+                }
+                .v-label {
+                    position: absolute;
+                    bottom: 12px;
+                    left: 50%;
+                    transform: translateX(-50%);
+                    font-size: 10px;
+                    color: white;
+                    font-weight: 900;
+                    letter-spacing: 0.1em;
+                    white-space: nowrap;
                 }
             `}</style>
         </div>

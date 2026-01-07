@@ -12,6 +12,8 @@ import ReactFlow, {
     addEdge
 } from 'reactflow';
 import 'reactflow/dist/style.css';
+import jsPDF from 'jspdf';
+import html2canvas from 'html2canvas';
 
 import { TEMPLATES } from '../../config/templates';
 
@@ -26,6 +28,8 @@ import DirectorAnalysisNode from '../../components/nodes/cinematic/DirectorAnaly
 import StoryboardNode from '../../components/nodes/cinematic/StoryboardNode';
 import FrameSplitterNode from '../../components/nodes/cinematic/FrameSplitterNode';
 import VideoGenNode from '../../components/nodes/cinematic/VideoGenNode';
+import AdAdapterNode from '../../components/nodes/AdAdapterNode';
+import VerticalAdSuiteNode from '../../components/nodes/VerticalAdSuiteNode';
 import ExportHandlerNode from '../../components/nodes/cinematic/ExportHandlerNode';
 import InstructionNode from '../../components/nodes/InstructionNode';
 
@@ -42,6 +46,8 @@ const nodeTypes = {
     imageGen: StoryboardNode,
     imageSplitter: FrameSplitterNode,
     videoGen: VideoGenNode,
+    adAdapter: AdAdapterNode,
+    verticalSuite: VerticalAdSuiteNode,
     exportHandler: ExportHandlerNode,
     instruction: InstructionNode,
 };
@@ -59,6 +65,13 @@ function CanvasInterface() {
     const [projectName, setProjectName] = useState("Untitled Project");
     const [lastSaved, setLastSaved] = useState(Date.now());
 
+    // 2. Nodes & Edges State
+    const [nodes, setNodes, onNodesChange] = useNodesState([]);
+    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
+
+    const nodesRef = useRef(nodes);
+    const edgesRef = useRef(edges);
+
     // 1. Credit Sync with Storage
     useEffect(() => {
         const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
@@ -67,6 +80,28 @@ function CanvasInterface() {
         }
     }, []);
 
+    // 2. Model Sync with Nodes - Runs on mount and whenever nodes are added
+    useEffect(() => {
+        const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
+        const textModel = config.model || 'gemini-3-flash';
+        const imageModel = config.imageModel || 'gemini-2.5-flash-image';
+        const videoModel = config.videoModel || 'veo-2.0-generate-001';
+
+        setNodes((nds) => nds.map(node => {
+            let modelToDisplay = textModel;
+            if (node.type === 'aiImage' || node.type === 'imageGen' || node.type === 'adAdapter') {
+                modelToDisplay = imageModel;
+            } else if (node.type === 'videoGen') {
+                modelToDisplay = videoModel;
+            }
+
+            if (node.data.model !== modelToDisplay) {
+                return { ...node, data: { ...node.data, model: modelToDisplay } };
+            }
+            return node;
+        }));
+    }, [nodes.length]); // Re-sync when nodes are added, and on initial mount
+
     // Persist credits when they change
     useEffect(() => {
         const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
@@ -74,12 +109,6 @@ function CanvasInterface() {
         creditsRef.current = credits;
     }, [credits]);
 
-    // 2. Nodes & Edges State
-    const [nodes, setNodes, onNodesChange] = useNodesState([]);
-    const [edges, setEdges, onEdgesChange] = useEdgesState([]);
-
-    const nodesRef = useRef(nodes);
-    const edgesRef = useRef(edges);
 
     useEffect(() => {
         nodesRef.current = nodes;
@@ -147,6 +176,130 @@ function CanvasInterface() {
         }
     };
 
+    // Ensure image is not too large for API payloads (Prevents "fetch failed" on server)
+    const ensureSafeImageSize = async (base64, maxDim = 1536) => {
+        if (!base64 || !base64.startsWith('data:')) return base64;
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const ratio = img.width / img.height;
+                let targetW = img.width;
+                let targetH = img.height;
+
+                if (targetW > maxDim || targetH > maxDim) {
+                    if (ratio > 1) {
+                        targetW = maxDim;
+                        targetH = maxDim / ratio;
+                    } else {
+                        targetH = maxDim;
+                        targetW = maxDim * ratio;
+                    }
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetW;
+                    canvas.height = targetH;
+                    const ctx = canvas.getContext('2d');
+                    ctx.drawImage(img, 0, 0, targetW, targetH);
+                    resolve(canvas.toDataURL('image/jpeg', 0.85)); // Use JPEG for better compression
+                } else {
+                    resolve(base64);
+                }
+            };
+            img.onerror = () => resolve(base64);
+            img.src = base64;
+        });
+    };
+
+    const adaptiveResizeVerticalSuite = async (base64, targetW, targetH) => {
+        if (!base64) throw new Error("Invalid source image for adaptation.");
+
+        return new Promise((resolve, reject) => {
+            const img = new Image();
+            img.crossOrigin = "anonymous";
+            img.onload = () => {
+                try {
+                    const canvas = document.createElement('canvas');
+                    canvas.width = targetW;
+                    canvas.height = targetH;
+                    const ctx = canvas.getContext('2d');
+
+                    // 1. Sample Background Color (Top-Left Pixel as per PRD)
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = 1;
+                    tempCanvas.height = 1;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1);
+                    const [r, g, b, a] = tempCtx.getImageData(0, 0, 1, 1).data;
+                    const bgColor = `rgba(${r},${g},${b},${a / 255})`;
+
+                    // 2. Fill Canvas with Background
+                    ctx.fillStyle = bgColor;
+                    ctx.fillRect(0, 0, targetW, targetH);
+
+                    // 3. Logic: Fit Width maintaining aspect ratio
+                    const imgRatio = img.width / img.height;
+                    const targetRatio = targetW / targetH;
+
+                    let newW, newH;
+                    if (imgRatio > targetRatio) {
+                        newW = targetW;
+                        newH = targetW / imgRatio;
+                    } else {
+                        newH = targetH;
+                        newW = targetH * imgRatio;
+                    }
+
+                    // 4. Position: Vertical centering with "Optical Center" offset (35% down)
+                    const pasteX = (targetW - newW) / 2;
+                    const pasteY = (targetH - newH) * 0.35;
+
+                    ctx.drawImage(img, pasteX, pasteY, newW, newH);
+                    resolve(canvas.toDataURL('image/png'));
+                } catch (err) {
+                    console.error("Canvas draw failed:", err);
+                    reject(new Error("Failed to process image canvas. This may be due to security restrictions on the source image."));
+                }
+            };
+            img.onerror = () => reject(new Error("Failed to load source image for Suite adaptation."));
+            img.src = base64;
+        });
+    };
+
+    const resizeBase64Image = async (base64, width, height) => {
+        return new Promise((resolve) => {
+            const img = new Image();
+            img.onload = () => {
+                const canvas = document.createElement('canvas');
+                canvas.width = width;
+                canvas.height = height;
+                const ctx = canvas.getContext('2d');
+
+                // HIGH FIDELITY RESIZE: Maintain aspect ratio by using an 'aspect-cover' Strategy
+                // This prevents stretching when the AI output doesn't perfectly match requested IAB pixels.
+                const imgRatio = img.width / img.height;
+                const targetRatio = width / height;
+
+                let sw, sh, sx, sy;
+                if (imgRatio > targetRatio) {
+                    // Source is wider than target
+                    sh = img.height;
+                    sw = img.height * targetRatio;
+                    sx = (img.width - sw) / 2;
+                    sy = 0;
+                } else {
+                    // Source is taller than target
+                    sw = img.width;
+                    sh = img.width / targetRatio;
+                    sx = 0;
+                    sy = (img.height - sh) / 2;
+                }
+
+                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
+                resolve(canvas.toDataURL('image/png'));
+            };
+            img.src = base64;
+        });
+    };
+
     const checkBillingPlan = useCallback(() => {
         window.open('https://aistudio.google.com/app/plan', '_blank');
     }, []);
@@ -179,13 +332,15 @@ function CanvasInterface() {
                 output: n.data.output,
                 label: n.data.label,
                 usedPrompt: n.data.usedPrompt,
+                aspectRatio: n.data.aspectRatio,
                 loading: undefined,
                 // Remove function references
                 onGenerate: undefined,
                 onDataChange: undefined,
                 onImageUpload: undefined,
                 onExpand: undefined,
-                onDelete: undefined
+                onDelete: undefined,
+                onModelToggle: undefined
             }
         }));
 
@@ -317,19 +472,110 @@ Hard requirements:
 <final output format> Output in this order: A) Scene Breakdown B) Theme & Story C) Cinematic Approach D) Keyframes (KF# list) E) ONE Master Contact Sheet Image description </final output format>
 `;
 
+    // Helper: Get nodes in topological order (dependency order)
+    const getTopologicalOrder = useCallback((targetIds = null) => {
+        const currentNodes = nodesRef.current;
+        const currentEdges = edgesRef.current;
+
+        // If targetIds provided, only get ancestors of those targets
+        let relevantNodeIds = new Set();
+        if (targetIds) {
+            const stack = [...targetIds];
+            while (stack.length > 0) {
+                const id = stack.pop();
+                if (!relevantNodeIds.has(id)) {
+                    relevantNodeIds.add(id);
+                    const incoming = currentEdges.filter(e => e.target === id);
+                    incoming.forEach(e => stack.push(e.source));
+                }
+            }
+        } else {
+            currentNodes.forEach(n => relevantNodeIds.add(n.id));
+        }
+
+        const sorted = [];
+        const visited = new Set();
+        const temporary = new Set();
+
+        const visit = (id) => {
+            if (visited.has(id)) return;
+            if (temporary.has(id)) return; // Simple cycle break
+
+            temporary.add(id);
+            const outgoing = currentEdges.filter(e => e.source === id);
+            outgoing.forEach(e => {
+                if (relevantNodeIds.has(e.target)) visit(e.target);
+            });
+            temporary.delete(id);
+            visited.add(id);
+            sorted.unshift(id);
+        };
+
+        // We want roots first, so we reverse the visit logic slightly 
+        // or just visit all and reverse the result
+        const roots = currentNodes.filter(n => !currentEdges.some(e => e.target === n.id));
+
+        const visitRootsFirst = (id) => {
+            if (visited.has(id)) return;
+            if (temporary.has(id)) return;
+            temporary.add(id);
+
+            const incoming = currentEdges.filter(e => e.target === id);
+            incoming.forEach(e => visitRootsFirst(e.source));
+
+            temporary.delete(id);
+            visited.add(id);
+            sorted.push(id);
+        };
+
+        const listToVisit = targetIds ? Array.from(relevantNodeIds) : currentNodes.map(n => n.id);
+        listToVisit.forEach(id => visitRootsFirst(id));
+
+        return sorted;
+    }, []);
+
     // Handle Generation Logic
-    const onGenerate = useCallback(async (id, customPrompt) => {
+    const onGenerate = useCallback(async (id, customPrompt, isSubCall = false) => {
         const targetNode = nodesRef.current.find(n => n.id === id);
         if (!targetNode) return;
 
+        // If this is a main entry point (not a sub-call from a chain) and it's a generation node,
+        // we should run the entire upstream flow first to ensure data consistency.
+        if (!isSubCall && ['aiImage', 'imageGen', 'aiVideo', 'videoGen', 'imageSplitter', 'adAdapter'].includes(targetNode.type)) {
+            console.log(`🚀 CHAIN EXECUTION: Starting flow for ${id}`);
+            const order = getTopologicalOrder([id]);
+            for (const stepId of order) {
+                if (stepId === id) break; // We will run the target node manually at the end
+                const sn = nodesRef.current.find(n => n.id === stepId);
+                // Only trigger generation nodes in the chain if they don't already have results
+                if (['text', 'assistant', 'aiAnalysis', 'aiImage', 'imageGen', 'videoGen', 'imageSplitter', 'adAdapter', 'verticalSuite'].includes(sn.type)) {
+                    const hasResult =
+                        sn.data.output ||
+                        sn.data.text ||
+                        sn.data.analysis ||
+                        (sn.data.frames && sn.data.frames.length > 0) ||
+                        (sn.data.clips && sn.data.clips.length > 0) ||
+                        (sn.data.outputs && Object.keys(sn.data.outputs).length > 0);
+
+                    if (!hasResult || sn.data.error) {
+                        await onGenerate(stepId, null, true);
+                    }
+                }
+            }
+        }
+
         // Determine credit cost based on node type
         let cost = 2;
+        if (targetNode.type === 'aiImage') cost = 4;
         if (targetNode.type === 'imageGen') cost = 4;
         if (targetNode.type === 'imageSplitter') cost = 5;
         if (targetNode.type === 'videoGen') cost = 10;
+        if (targetNode.type === 'adAdapter') cost = 8;
+        if (targetNode.type === 'verticalSuite') cost = 6;
         if (targetNode.type === 'aiAnalysis') cost = 1;
         if (targetNode.type === 'assistant') cost = 1;
         if (targetNode.type === 'text') cost = 1;
+        if (targetNode.type === 'media') cost = 1;
 
         if (creditsRef.current < cost) {
             alert(`Insufficient credits! This operation costs ${cost} 🪙.`);
@@ -337,84 +583,171 @@ Hard requirements:
         }
 
         console.log(`--- GENERATION START (${targetNode.type}) ---`);
-        setNodes((nds) => nds.map(node => {
-            if (node.id === id) {
-                return { ...node, data: { ...node.data, loading: true, output: null } };
+
+        const getAllUpstreamData = (nodeId, visited = new Set()) => {
+            if (visited.has(nodeId)) return { images: [], texts: [], analysis: null, frames: [] };
+            visited.add(nodeId);
+
+            const incoming = edgesRef.current.filter(e => e.target === nodeId);
+            let results = { images: [], texts: [], analysis: null, frames: [] };
+
+            for (const edge of incoming) {
+                const sn = nodesRef.current.find(n => n.id === edge.source);
+                if (!sn) continue;
+
+                // 1. Collect Data from immediate source
+                const asset = sn.data.output || sn.data.image || sn.data.video;
+                if (asset) results.images.push({ id: sn.id, image: asset });
+
+                const textVal = sn.data.text || (sn.data.output && typeof sn.data.output === 'string' ? sn.data.output : null);
+                const isPlaceholder = textVal && (
+                    textVal.includes("Upload Product Info") ||
+                    textVal.includes("Set custom preferences") ||
+                    textVal.includes("Enter prompt or text content") ||
+                    textVal.length < 10
+                );
+
+                if (textVal && !isPlaceholder && !results.texts.includes(textVal)) {
+                    results.texts.push(textVal);
+                }
+
+                if (sn.data.analysis) results.analysis = sn.data.analysis;
+                if (sn.data.frames) results.frames = sn.data.frames;
+
+                // 2. Recurse to gather all ancestors
+                const upstream = getAllUpstreamData(sn.id, visited);
+                results.images = [...results.images, ...upstream.images];
+                results.texts = [...new Set([...results.texts, ...upstream.texts])];
+                if (!results.analysis) results.analysis = upstream.analysis;
+                if (!results.frames) results.frames = upstream.frames;
             }
-            return node;
-        }));
+            return results;
+        };
+
+        setNodes((nds) => {
+            const next = nds.map(node => {
+                if (node.id !== id) return node;
+
+                // For Splitter/VideoGen/Suite, we don't clear output because it's in clips/frames/outputs
+                if (['imageSplitter', 'videoGen', 'adAdapter', 'verticalSuite'].includes(node.type)) {
+                    return { ...node, data: { ...node.data, loading: true } };
+                }
+                return { ...node, data: { ...node.data, loading: true, output: null } };
+            });
+            nodesRef.current = next;
+            return next;
+        });
 
         try {
             const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
-            const { apiKey, model: defaultModel } = config;
+            const { apiKey, model: textModel, imageModel: selectedImageModel, videoModel: selectedVideoModel } = config;
+            const model = textModel || 'gemini-3-flash';
+            const imageModel = selectedImageModel || 'gemini-2.5-flash-image';
+            const videoModel = selectedVideoModel || 'veo-2.0-generate-001';
             let data;
 
-            const getAllUpstreamData = (nodeId, visited = new Set()) => {
-                if (visited.has(nodeId)) return { images: [], texts: [], analysis: null, frames: [] };
-                visited.add(nodeId);
-
-                const incoming = edgesRef.current.filter(e => e.target === nodeId);
-                let results = { images: [], texts: [], analysis: null, frames: [] };
-
-                for (const edge of incoming) {
-                    const sn = nodesRef.current.find(n => n.id === edge.source);
-                    if (!sn) continue;
-
-                    // 1. Collect Data from immediate source
-                    const img = sn.data.output || sn.data.image;
-                    if (img) results.images.push({ id: sn.id, image: img });
-
-                    const textVal = sn.data.text || (sn.data.output && typeof sn.data.output === 'string' ? sn.data.output : null);
-                    if (textVal && textVal.length > 5 && !results.texts.includes(textVal)) {
-                        results.texts.push(textVal);
-                    }
-
-                    if (sn.data.analysis) results.analysis = sn.data.analysis;
-                    if (sn.data.frames) results.frames = sn.data.frames;
-
-                    // 2. Recurse to gather all ancestors
-                    const upstream = getAllUpstreamData(sn.id, visited);
-                    results.images = [...results.images, ...upstream.images];
-                    results.texts = [...new Set([...results.texts, ...upstream.texts])];
-                    if (!results.analysis) results.analysis = upstream.analysis;
-                    if (!results.frames) results.frames = upstream.frames;
-                }
-                return results;
-            };
 
             const incomingEdges = edgesRef.current.filter(e => e.target === id);
             const sourceNodes = incomingEdges.map(e => nodesRef.current.find(n => n.id === e.source)).filter(Boolean);
             const upstreamData = getAllUpstreamData(id);
 
             const inputImagesRaw = Array.from(new Map(upstreamData.images.map(item => [item.id, item])).values());
+
+            // Safety Guard: Detect if any upstream source is still in 'loading' / 'uploading' state
+            const loadingNodes = inputImagesRaw.filter(img => {
+                const node = nodesRef.current.find(n => n.id === img.id);
+                return node?.data.loading;
+            });
+            if (loadingNodes.length > 0) {
+                const msg = `Upstream asset "${loadingNodes[0].data?.label || loadingNodes[0].id}" is still uploading. Please wait until the upload is complete before generating.`;
+                alert(msg);
+
+                // Safely abort generation and reset loading state
+                setNodes((nds) => {
+                    const next = nds.map(node => {
+                        if (node.id === id) {
+                            return { ...node, data: { ...node.data, loading: false } };
+                        }
+                        return node;
+                    });
+                    nodesRef.current = next;
+                    return next;
+                });
+                return;
+            }
+
             let inputAnalysis = upstreamData.analysis;
             let hdImages = upstreamData.frames;
             let connectedPrompt = upstreamData.texts.reverse().join('\n\n'); // Prioritize distant context, closest text at bottom
 
             const inputImagesBase64 = await Promise.all(
-                inputImagesRaw.map(item => imageToBase64(item.image))
+                inputImagesRaw.map(async item => await ensureSafeImageSize(await imageToBase64(item.image)))
             );
 
-            let finalPrompt = customPrompt || connectedPrompt || targetNode.data.prompt || targetNode.data.aiPlaceholder;
-            let modelToUse = defaultModel || 'gemini-2.5-flash-image';
+            // 1. Resolve Best Prompt/Instruction for THIS node
+            const nodeInstruction = customPrompt || targetNode.data.prompt || targetNode.data.text || targetNode.data.aiPlaceholder;
+
+            // 2. Build Comprehensive Context from ALL upstream sources
+            // 2. Build Comprehensive Context from ALL upstream sources
+            let contextParts = [];
+            if (connectedPrompt) contextParts.push(`<upstream_context>${connectedPrompt}</upstream_context>`);
+
+            // Optimization: If we have specific analysis data, only include relevant parts to save tokens
+            if (inputAnalysis) {
+                // If targeting Video Gen, we don't need the full text, just the structured keyframes usually.
+                // But for general context, let's truncate significantly.
+                // If it's the Director Node output, it might be huge JSON.
+                if (targetNode.type === 'videoGen') {
+                    // Video Gen handles its own prompt logic downstream, so we can skip adding huge analysis text here
+                } else {
+                    const analysisSummary = `Theme: ${inputAnalysis.theme}. Strategy: ${inputAnalysis.full_text?.substring(0, 300)}...`;
+                    contextParts.push(`<director_analysis>${analysisSummary}</director_analysis>`);
+                }
+            }
+
+            const PRODUCT_FIDELITY_INSTRUCTION = `[System: Maintain 1:1 product visual fidelity. Do not hallucinate features.]`;
+
+            const contextString = contextParts.join('\n');
+            let finalPrompt = nodeInstruction;
+
+            // If we have upstream context, wrap the prompt to ensure AI sees both
+            if (contextString && nodeInstruction) {
+                finalPrompt = `${contextString}\nInput: ${nodeInstruction}\n${PRODUCT_FIDELITY_INSTRUCTION}`;
+            } else if (!nodeInstruction) {
+                finalPrompt = contextString ? `${contextString}\n${PRODUCT_FIDELITY_INSTRUCTION}` : PRODUCT_FIDELITY_INSTRUCTION;
+            }
+
+            let modelToUse = model;
+
+            // Validation: Ensure we have SOMETHING to work with (either instructions, context, or an image)
+            if (!finalPrompt && targetNode.type !== 'imageSplitter' && targetNode.type !== 'videoGen') {
+                if (inputImagesBase64.length > 0) {
+                    finalPrompt = PRODUCT_FIDELITY_INSTRUCTION;
+                } else if (targetNode.type === 'aiAnalysis') {
+                    finalPrompt = STORYBOARD_PROMPT;
+                } else {
+                    throw new Error("Prompt, upstream context, or an image is required. Please type a prompt or connect a source node.");
+                }
+            }
 
             // Specialized Logic Per Node Type
             if (targetNode.type === 'aiAnalysis' || targetNode.type === 'assistant' || targetNode.type === 'text') {
                 if (targetNode.type === 'aiAnalysis' && inputImagesBase64.length === 0) throw new Error("Reference Image is required for analysis.");
-                finalPrompt = customPrompt || targetNode.data.prompt || targetNode.data.aiPlaceholder || (targetNode.type === 'aiAnalysis' ? STORYBOARD_PROMPT : "");
-                modelToUse = 'gemini-2.5-flash-lite';
+                // Ensure Analysis always uses its master system prompt if none is provided
+                if (targetNode.type === 'aiAnalysis' && !nodeInstruction) {
+                    finalPrompt = `${contextString}\n\n${STORYBOARD_PROMPT}`;
+                }
+                modelToUse = model;
             } else if (targetNode.type === 'imageGen' || targetNode.type === 'aiImage') {
-                if (targetNode.type === 'imageGen' && !inputAnalysis) {
-                    throw new Error("Director AI analysis is required first.");
+                if (targetNode.type === 'imageGen' && !customPrompt && !targetNode.data.prompt) {
+                    const sheetDesc = inputAnalysis?.contact_sheet_description || "3x3 Grid Contact Sheet, cinematic storyboard";
+                    const fallbackPrompt = inputAnalysis ?
+                        `Create a 3x3 Grid Contact Sheet based on these keyframes: ${sheetDesc}. Keep visual consistency with the reference image style.` :
+                        "Create a professional 3x3 cinematic storyboard grid following a cohesive theme. High-fidelity cinematic photography style.";
+
+                    finalPrompt = `${contextString}\n\n<instruction>\n${fallbackPrompt}\n</instruction>\n\n${PRODUCT_FIDELITY_INSTRUCTION}`;
                 }
-                if (targetNode.type === 'imageGen') {
-                    // Use auto-prompt only if no override is provided manually
-                    if (!customPrompt && !connectedPrompt && !targetNode.data.prompt) {
-                        const sheetDesc = inputAnalysis.contact_sheet_description || "3x3 Grid Contact Sheet, cinematic storyboard";
-                        finalPrompt = `Create a 3x3 Grid Contact Sheet based on these keyframes: ${sheetDesc}. Keep visual consistency with the reference image style.`;
-                    }
-                }
-                modelToUse = 'gemini-2.5-flash-image';
+                modelToUse = imageModel;
             }
 
             // 2. Generation Work
@@ -422,7 +755,7 @@ Hard requirements:
                 // Find storyboard grid source and original reference
                 const allNodes = nodesRef.current;
                 const storyboardNode = sourceNodes.find(n => n.type === 'imageGen' || (n.data.output && !n.data.frames));
-                const refNode = allNodes.find(n => n.type === 'source' || n.type === 'sourceUpload' || n.id === 'cv1');
+                const refNode = allNodes.find(n => ['source', 'sourceUpload', 'media'].includes(n.type) || n.id === 'cv1');
 
                 const storyboardImg = storyboardNode ? (storyboardNode.data.output || storyboardNode.data.image) : null;
                 const refImg = refNode ? (refNode.data.image || refNode.data.output) : null;
@@ -431,8 +764,8 @@ Hard requirements:
                 if (!refImg) throw new Error("Original Reference Image (Step 1) is required for continuity.");
 
                 console.log("🛠️ --- ANALYZING STORYBOARD FOR HD RESTORATION (Gemini Intelligence) ---");
-                const gridBase64 = await imageToBase64(storyboardImg);
-                const refBase64 = await imageToBase64(refImg);
+                const gridBase64 = await ensureSafeImageSize(await imageToBase64(storyboardImg));
+                const refBase64 = await ensureSafeImageSize(await imageToBase64(refImg));
 
                 // 1. Analyze Storyboard Grid with Original Reference for Continuity
                 const analysisResponse = await fetch('/api/generate', {
@@ -441,7 +774,7 @@ Hard requirements:
                     body: JSON.stringify({
                         prompt: SPLITTER_ANALYSIS_PROMPT,
                         apiKey,
-                        model: 'gemini-2.5-flash-image',
+                        model: 'gemini-3-flash-preview',
                         images: [refBase64, gridBase64] // Original Ref + Storyboard Grid
                     })
                 });
@@ -465,7 +798,7 @@ Hard requirements:
                         body: JSON.stringify({
                             prompt: prompt,
                             apiKey,
-                            model: 'gemini-2.5-flash-image',
+                            model: imageModel,
                             images: [refBase64] // Match with original reference for perfect continuity
                         })
                     }).then(res => res.json())
@@ -475,24 +808,242 @@ Hard requirements:
                 const successfulFrames = frameResults.map(r => r.output || "https://picsum.photos/seed/error/400/225");
 
                 data = { frames: successfulFrames };
-            } else if (targetNode.type === 'videoGen') {
-                if (!hdImages || !inputAnalysis || !inputAnalysis.keyframes) {
-                    throw new Error("Missing inputs! Ensure Step 2 (Analysis) and Step 4 (HD Framing) are complete.");
+            } else if (targetNode.type === 'adAdapter') {
+                const masterImg = inputImagesRaw[inputImagesRaw.length - 1]?.image;
+                if (!masterImg) throw new Error("A Master Canvas or Source Image is required for IAB Adaptation.");
+
+                const masterBase64 = await ensureSafeImageSize(await imageToBase64(masterImg));
+                const IAB_TASKS = [
+                    { w: 300, h: 250, label: "Medium Rectangle" },
+                    { w: 728, h: 90, label: "Leaderboard" },
+                    { w: 160, h: 600, label: "Wide Skyscraper" },
+                    { w: 320, h: 50, label: "Mobile Banner" },
+                    { w: 970, h: 250, label: "Billboard" },
+                    { w: 300, h: 1050, label: "Portrait" },
+                    { w: 336, h: 280, label: "Large Rectangle" },
+                    { w: 300, h: 600, label: "Half-Page Ad" },
+                    { w: 970, h: 90, label: "Large Leaderboard" },
+                    { w: 468, h: 60, label: "Banner" },
+                    { w: 250, h: 250, label: "Square" },
+                    { w: 120, h: 600, label: "Skyscraper" },
+                    { w: 300, h: 50, label: "Mobile Leaderboard" },
+                    { w: 300, h: 100, label: "Mobile Large Banner" },
+                    { w: 320, h: 100, label: "Mobile Large Banner" },
+                    { w: 200, h: 200, label: "Small Square" }
+                ];
+
+                console.log(`📐 --- PROGRAMMATIC AD ADAPTATION: Processing all ${IAB_TASKS.length} variants ---`);
+
+                // We split the 16 tasks into two batches to respect API limits while ensuring all variants are generated
+                const finalOutputs = new Array(IAB_TASKS.length).fill(null);
+                const batchSize = 8;
+
+                for (let b = 0; b < IAB_TASKS.length; b += batchSize) {
+                    const batchIndices = Array.from({ length: Math.min(batchSize, IAB_TASKS.length - b) }, (_, i) => b + i);
+
+                    console.log(`Processing Batch: ${b / batchSize + 1} (${batchIndices.length} variants)...`);
+
+                    const batchTasks = batchIndices.map(idx => {
+                        const task = IAB_TASKS[idx];
+                        const ratio = task.w > task.h ? "landscape" : (task.w === task.h ? "square" : "portrait");
+                        const isExtremeTall = task.h / task.w >= 3;
+                        const isExtremeWide = task.w / task.h >= 3.0;
+
+                        const iabBrandingLevel = `
+                        1. HEADLINE: "YEAR-END SALE" (Bold, prominent).
+                        2. PRICE: "$68*" (Include the dollar sign). 
+                        3. DATE: "Valid: 29 Dec 2025 - 30 Jun 2026" (Must be fully readable).
+                        4. FOOTER: "Terms and conditions apply. Buy now at participating outlets." (No gibberish).
+                        5. PRODUCT: Central focus, high fidelity.
+                        `;
+
+                        const layoutRule = isExtremeTall
+                            ? "CRITICAL NARROW VERTICAL LAYOUT: Rearrange ALL elements from the reference image. Stack elements vertically: Headline (Top), Product (Middle), Price (Below Product), Footer (Bottom). IMPORTANT: Use a 'Safe Margin' - leave at least 10% empty space on the left and right edges. Shrink the font size of the Headline and Footer so they do NOT touch the edges."
+                            : (isExtremeWide
+                                ? "CRITICAL EXTREME WIDE LAYOUT: Rearrange ALL elements horizontally to fit this short, wide span. Stack elements: Headline (Left), Product (Center), Price & Date (Right). IMPORTANT: Use a 'Safe Margin' - leave at least 15% empty space on the top and bottom edges. Shrink font sizes significantly so no text is sliced off at the top or bottom."
+                                : (ratio === "landscape"
+                                    ? "Horizontal Layout: Branding on left, Product on right, Price badge in middle. Ample padding."
+                                    : (ratio === "square" ? "Square Layout: Centered branding, Product below, Price badge corner. Clean margins." : "Vertical Layout: Branding top, Product center, Price badge bottom. Stacked alignment.")));
+
+                        return fetch('/api/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                                prompt: `IAB Programmatic Adaptation: ${task.label} (${task.w}x${task.h}). 
+                                [Core Requirements]:
+                                ${iabBrandingLevel}
+                                
+                                [Layout Strategy]:
+                                ${layoutRule}
+
+                                [System Instruction]: Only use the elements from the provided master image. Resize and rearrange them. Do NOT introduce new decorative elements or hallucinated text. Keep the light purple aesthetic. ${PRODUCT_FIDELITY_INSTRUCTION}.`,
+                                apiKey,
+                                model: imageModel,
+                                images: [masterBase64],
+                                aspectRatio: `${task.w}:${task.h}`
+                            })
+                        }).then(res => res.json());
+                    });
+
+                    const batchResults = await Promise.all(batchTasks);
+                    for (let i = 0; i < batchResults.length; i++) {
+                        const res = batchResults[i];
+                        const idx = batchIndices[i];
+                        const task = IAB_TASKS[idx];
+                        const rawOutput = res.output || res.image || masterImg;
+
+                        if (rawOutput && rawOutput.startsWith('data:image')) {
+                            finalOutputs[idx] = await resizeBase64Image(rawOutput, task.w, task.h);
+                        } else {
+                            finalOutputs[idx] = rawOutput;
+                        }
+                    }
                 }
 
+                data = { outputs: finalOutputs };
+            } else if (targetNode.type === 'verticalSuite') {
+                const masterImg = inputImagesRaw[inputImagesRaw.length - 1]?.image;
+                if (!masterImg) throw new Error("A Master Creative or Source Image is required for the Vertical Suite.");
+
+                const masterBase64 = await ensureSafeImageSize(await imageToBase64(masterImg));
+                const targets = [
+                    { id: 'half-page', w: 300, h: 600, label: "Half-Page Ad", strategy: "Balanced composition. Large, legible 'YEAR-END SALE' headline at the top. High-resolution product image in the center. Bold price badge ($68*) and clean footer." },
+                    { id: 'wide-skyscraper', w: 160, h: 600, label: "Wide Skyscraper", strategy: "Vertical reflow. Stack text elements into multiple lines. Scale product device down to fit 160px width. Extend light purple background vertically to create breathing room." },
+                    { id: 'skyscraper', w: 120, h: 600, label: "Skyscraper", strategy: "Extreme narrow stacking. Prioritize legibility. Use stacked version of logo/text. Large 'SALE' dominant text. Product image serves as a smaller icon focal point." },
+                    { id: 'portrait', w: 300, h: 1050, label: "Portrait (Tall)", strategy: "Luxury vertical space. Brand Logo at top, Product in optical center (approx 35% down), '68*' Price Badge and CTA Footer at the very bottom. Maximum negative space." }
+                ];
+
+                console.log(`📐 --- ADAPTIVE VERTICAL SUITE: Processing ${targets.length} AI-Generated formats ---`);
+
+                const finalOutputs = {};
+
+                const suiteGeneratorTasks = targets.map(t =>
+                    fetch('/api/generate', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                            prompt: `IAB Vertical Suite Adaptation: ${t.label} (${t.w}x${t.h}). 
+                            [Design Rules]:
+                            1. PRODUCT: Maintain 1:1 fidelity.
+                            2. TEXT: Re-compose 'YEAR-END SALE', '$68*', and 'All Options' based on the ratio.
+                            3. STYLE: Light purple aesthetic with soft shadows.
+                            4. [LAYOUT STRATEGY]: ${t.strategy}`,
+                            apiKey,
+                            model: imageModel,
+                            images: [masterBase64],
+                            aspectRatio: `${t.w}:${t.h}`
+                        })
+                    }).then(res => res.json())
+                );
+
+                const suiteResults = await Promise.all(suiteGeneratorTasks);
+
+                for (let i = 0; i < suiteResults.length; i++) {
+                    const res = suiteResults[i];
+                    const t = targets[i];
+                    const rawOutput = res.output || res.image || masterImg;
+
+                    if (rawOutput && rawOutput.startsWith('data:image')) {
+                        finalOutputs[t.id] = await resizeBase64Image(rawOutput, t.w, t.h);
+                    } else {
+                        finalOutputs[t.id] = rawOutput;
+                    }
+                }
+
+                data = { outputs: finalOutputs };
+            } else if (targetNode.type === 'videoGen') {
+                // Optimized Asset Selection (Image-to-Video Focus):
+                // 1. Prioritize Direct Parent Nodes that specifically provide Images (ImageGen, AIImage, Storyboard)
+                if (!hdImages || hdImages.length === 0) {
+                    const directAssets = sourceNodes.flatMap(sn => {
+                        // Priority 1: Storyboard frames
+                        if (sn.data.frames && sn.data.frames.length > 0) return sn.data.frames;
+
+                        // Priority 2: AI Generated outputs (This captures the hand showcase images)
+                        if (sn.data.output && typeof sn.data.output === 'string') return [sn.data.output];
+
+                        // Priority 3: Manual uploads / secondary image fields
+                        if (sn.data.image) return [sn.data.image];
+
+                        return [];
+                    });
+
+                    if (directAssets.length > 0) {
+                        hdImages = directAssets;
+                        console.log(`✅ Targeted ${hdImages.length} frames from direct parent(s) for Video Gen.`);
+                    } else if (sourceNodes.length > 0) {
+                        throw new Error(`The parent node "${sourceNodes[0].data?.label || sourceNodes[0].id}" has no generated output image. Please run it first.`);
+                    } else {
+                        // Truly isolated node (no edges), fallback to any available images in the project
+                        hdImages = inputImagesRaw.map(item => item.image).filter(Boolean);
+                    }
+                }
+
+                // 1b. Check for structured "Director Analysis" shots (New Template)
+                // If we have a 'shots' array from the analysis (Director Mode), use that as the primary driver for batch count
+                if (inputAnalysis && inputAnalysis.shots && inputAnalysis.shots.length > 0) {
+                    // We allow reuse of the single source image across multiple distinct shot prompts
+                    console.log(`🎬 Detected Director Analysis with ${inputAnalysis.shots.length} structured shots.`);
+                }
+
+                if (!inputAnalysis || (!inputAnalysis.keyframes && !inputAnalysis.shots)) {
+                    // Create a dummy analysis structure for single-clip generation
+                    inputAnalysis = {
+                        keyframes: hdImages.map((_, i) => ({
+                            action: "subtle cinematic motion",
+                            camera: "slow zoom in"
+                        }))
+                    };
+                }
+
+                if (!hdImages || hdImages.length === 0) {
+                    throw new Error("Missing inputs! Please connect an Image or Storyboard node to the Video Producer.");
+                }
+
+                // Determine loop count: 
+                // - If we have structured "shots", we loop through THEM (reusing the image if needed).
+                // - Otherwise, we loop through available images/keyframes.
+                const directorShots = inputAnalysis.shots;
                 const keyframeData = inputAnalysis.keyframes;
-                const count = Math.min(hdImages.length, keyframeData.length);
+
+                const count = directorShots && directorShots.length > 0
+                    ? directorShots.length
+                    : Math.min(hdImages.length, keyframeData.length);
+
                 const generatedClips = [];
 
                 console.log(`🎬 --- STARTING BATCH VIDEO GENERATION (${count} clips) ---`);
 
                 for (let i = 0; i < count; i++) {
-                    const currentFrame = hdImages[i];
-                    const kf = keyframeData[i];
-                    const motionPrompt = (targetNode.data.videoPrompts?.[i]) ||
-                        `Cinematic shot, ${kf.action}. Camera movement: ${kf.camera}. High resolution, photorealistic.`;
+                    const shot = directorShots ? directorShots[i] : null;
+                    // If using Director Shots, we reuse the first image if there's only one source (common in E-com template)
+                    // Otherwise we try to match indices (Storyboard mode)
+                    const currentFrame = (directorShots && hdImages.length === 1) ? hdImages[0] : (hdImages[i] || hdImages[0]);
+                    const kf = keyframeData ? keyframeData[i] : null;
 
-                    console.log(`Generating Video for Index ${i} using Image: ${currentFrame.substring(0, 50)}... and Prompt: ${motionPrompt}`);
+                    // 1. Resolve individual motion prompt
+                    let nodeMotionPrompt = "";
+
+                    if (shot) {
+                        // Director Mode: Use the structured shot details
+                        // We construct a specific prompt for Veo that includes style, movement, and the visual description
+                        nodeMotionPrompt = `Create a high-quality video.
+Visual: ${shot.visual_description}
+Camera Movement: ${shot.camera_movement || 'Static'}
+Lighting: ${shot.lighting || 'Cinematic'}
+Style: High-Fidelity Product Showcase`;
+                    } else {
+                        // Legacy / Manual Mode
+                        nodeMotionPrompt = (targetNode.data.videoPrompts?.[i]) ||
+                            `Cinematic shot, ${kf?.action || 'motion'}. Camera movement: ${kf?.camera || 'steady'}. High resolution, photorealistic.`;
+                    }
+
+                    // 2. VIDEO-SPECIFIC PROMPT LOGIC:
+                    const promptToUse = nodeMotionPrompt;
+
+                    console.log(`🎬 --- GENERATING VIDEO CLIP ${i + 1} ---`);
+                    console.log(`Target Image (Start Frame): ${currentFrame.substring(0, 50)}...`);
+                    console.log(`Motion Instruction: ${promptToUse.substring(0, 100)}...`);
 
                     // Rate Limit Spacing: Wait if not the first clip
                     if (i > 0) {
@@ -514,8 +1065,8 @@ Hard requirements:
                         return node;
                     }));
 
-                    const frameBase64 = await imageToBase64(currentFrame);
-                    const promptToUse = motionPrompt;
+                    let frameBase64 = await imageToBase64(currentFrame);
+                    frameBase64 = await ensureSafeImageSize(frameBase64);
 
                     let opResult;
                     let attempts = 0;
@@ -523,14 +1074,17 @@ Hard requirements:
                     let success = false;
 
                     while (attempts < maxAttempts && !success) {
+                        const finalAspectRatio = targetNode.data.aspectRatio || sourceNodes[0]?.data?.aspectRatio || "1:1";
+
                         const response = await fetch('/api/generate', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 prompt: promptToUse,
                                 apiKey,
-                                model: 'veo-3.0-generate-001',
-                                images: [frameBase64]
+                                model: videoModel,
+                                images: [frameBase64],
+                                aspectRatio: finalAspectRatio
                             })
                         });
 
@@ -551,13 +1105,27 @@ Hard requirements:
                                     }));
                                     await new Promise(r => setTimeout(r, waitTime));
                                     continue;
+                                    await new Promise(r => setTimeout(r, waitTime));
+                                    continue;
                                 }
-                                throw new Error("API Quota Reached: Your current plan has hit its limit. Please wait 1-2 minutes or upgrade your Google Billing Plan.");
+                                console.warn("API Quota Reached. Stopping batch generation gracefully.");
+                                setNodes((nds) => nds.map(node => {
+                                    if (node.id === id) {
+                                        return { ...node, data: { ...node.data, status: `Quota Limit Hit. Partial results saved (${generatedClips.length}/${count}).` } };
+                                    }
+                                    return node;
+                                }));
+                                // Break the inner retry loop AND the outer batch loop (using a flag or labeled break)
+                                success = false;
+                                break;
                             }
                             throw new Error(errorMsg);
                         }
                         success = true;
                     }
+
+                    // If loop broke due to quota failure (not success), stop the whole batch
+                    if (!success) break;
 
                     // Handle Polling for this clip
                     if (opResult.type === 'operation') {
@@ -570,14 +1138,121 @@ Hard requirements:
                             const pollRes = await fetch(`/api/operation?id=${encodeURIComponent(opId)}&key=${encodeURIComponent(apiKey)}`);
                             const pollData = await pollRes.json();
 
+                            if (pollData.error) {
+                                throw new Error(`AI Engine Error: ${pollData.error.message || 'The operation failed.'}`);
+                            }
+
                             if (pollData.done) {
                                 isDone = true;
+
+                                // Safety Filter Detection (RAI)
+                                const filtered = pollData.response?.generateVideoResponse?.raiMediaFilteredReasons ||
+                                    pollData.response?.results?.[0]?.raiMediaFilteredReasons;
+                                if (filtered && filtered.length > 0) {
+                                    throw new Error(`AI Safety Filter Triggered: ${filtered[0]}`);
+                                }
                                 pollResult = pollData.response?.results?.[0]?.video?.uri ||
                                     pollData.response?.video?.uri ||
-                                    pollData.response?.output;
+                                    pollData.response?.output ||
+                                    pollData.response?.uri ||
+                                    pollData.metadata?.output_uri;
+
+                                if (!pollResult) {
+                                    const findFirstUrl = (val) => {
+                                        if (!val) return null;
+                                        if (typeof val === 'string' && val.startsWith('http')) return val;
+                                        if (typeof val === 'object') {
+                                            for (const k in val) {
+                                                const res = findFirstUrl(val[k]);
+                                                if (res) return res;
+                                            }
+                                        }
+                                        return null;
+                                    };
+                                    pollResult = findFirstUrl(pollData.response) || findFirstUrl(pollData.metadata) || findFirstUrl(pollData);
+                                }
+
+                                if (pollResult && typeof pollResult === 'string' &&
+                                    (pollResult.includes('generativelanguage.googleapis.com') || pollResult.includes('videointelligence.googleapis.com'))) {
+                                    const separator = pollResult.includes('?') ? '&' : '?';
+                                    pollResult = `${pollResult}${separator}key=${apiKey}`;
+                                    console.log('🔐 [Auth] Appended key to video URI for browser access');
+                                }
+
+                                if (!pollResult) {
+                                    console.error("🔎 Video Marked DONE but no URL found in response. Raw Data:", JSON.stringify(pollData, null, 2));
+                                }
                             }
                         }
-                        generatedClips.push(pollResult || "https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4");
+
+                        if (!pollResult) {
+                            throw new Error("Video production completed but no video URI was found in the response. This often happens if the AI flags the content for safety or if the prompt is too complex. Check the browser console for 'Poll Data' to see the raw API response.");
+                        }
+                        generatedClips.push(pollResult);
+
+                        // Incremental UI Update: Show the clip IMMEDIATELY
+                        setNodes((nds) => nds.map(node => {
+                            if (node.id === id) {
+                                return {
+                                    ...node,
+                                    data: {
+                                        ...node.data,
+                                        clips: [...generatedClips], // Show clips gathered so far
+                                        output: generatedClips[0],  // Ensure main output is set
+                                        status: `Generated clip ${i + 1} of ${count}...`
+                                    }
+                                };
+                            }
+                            return node;
+                        }));
+                    }
+                } // End of Batch Loop
+
+                // 3. Post-Processing: Stitch Clips with FFmpeg (Client-Side)
+                if (generatedClips.length > 1) {
+                    try {
+                        console.log('🧵 --- STITCHING CLIPS WITH FFMPEG ---');
+                        setNodes((nds) => nds.map(node => node.id === id ? { ...node, data: { ...node.data, status: 'Stitching full video...' } } : node));
+
+                        const { FFmpeg } = await import('@ffmpeg/ffmpeg');
+                        const { fetchFile, toBlobURL } = await import('@ffmpeg/util');
+
+                        const ffmpeg = new FFmpeg();
+                        const baseURL = 'https://unpkg.com/@ffmpeg/core@0.12.6/dist/umd';
+
+                        await ffmpeg.load({
+                            coreURL: await toBlobURL(`${baseURL}/ffmpeg-core.js`, 'text/javascript'),
+                            wasmURL: await toBlobURL(`${baseURL}/ffmpeg-core.wasm`, 'application/wasm'),
+                        });
+
+                        const inputFiles = [];
+                        for (let i = 0; i < generatedClips.length; i++) {
+                            const fileName = `clip${i}.mp4`;
+                            await ffmpeg.writeFile(fileName, await fetchFile(generatedClips[i]));
+                            inputFiles.push(fileName);
+                        }
+
+                        // Create file list for concatenation
+                        const listContent = inputFiles.map(f => `file '${f}'`).join('\n');
+                        await ffmpeg.writeFile('list.txt', listContent);
+
+                        // Run concat command
+                        await ffmpeg.exec(['-f', 'concat', '-safe', '0', '-i', 'list.txt', '-c', 'copy', 'output.mp4']);
+
+                        const data = await ffmpeg.readFile('output.mp4');
+                        const blob = new Blob([data.buffer], { type: 'video/mp4' });
+                        const stitchedUrl = URL.createObjectURL(blob);
+
+                        console.log('✅ Stitching Complete:', stitchedUrl);
+
+                        // Add stitched video as the primary output or an extra
+                        generatedClips.unshift(stitchedUrl);
+
+                        setNodes((nds) => nds.map(node => node.id === id ? { ...node, data: { ...node.data, status: 'Final Render Complete' } } : node));
+
+                    } catch (stitchError) {
+                        console.error('Stitching failed:', stitchError);
+                        // Don't fail the whole process if stitching fails, just show individual clips
                     }
                 }
 
@@ -596,7 +1271,8 @@ Hard requirements:
                             prompt: finalPrompt,
                             apiKey,
                             model: modelToUse,
-                            images: inputImagesBase64
+                            images: inputImagesBase64,
+                            ...(['aiImage', 'imageGen'].includes(targetNode.type) ? { aspectRatio: targetNode.data.aspectRatio || "1:1" } : {})
                         })
                     });
 
@@ -651,56 +1327,57 @@ Hard requirements:
             // (Standard credits logic applies below)
             setCredits((c) => Math.max(0, c - cost));
 
-            setNodes((nds) => nds.map(node => {
-                if (node.id === id) {
-                    let updatedData = { ...node.data, loading: false, status: 'Complete' };
+            // 1. Prepare updated node data
+            let updatedData = { ...targetNode.data, loading: false, status: 'Complete' };
 
-                    if (targetNode.type === 'aiAnalysis' && data.text) {
-                        // Advanced Keyframe Extraction
-                        const kfText = data.text.split('[KF#')[1] ? data.text.split(/\[KF#/i).slice(1) : [];
-                        const themeMatch = data.text.match(/Theme:\s*(.*)/i);
-
-                        const parsedKeyframes = kfText.map((block) => {
-                            const actionMatch = block.match(/Action\/beat:\s*([^\n-]*)/i);
-                            const cameraMatch = block.match(/Camera:\s*([^\n-]*)/i);
-                            return {
-                                action: actionMatch ? actionMatch[1].trim() : "Cinematic subject focus",
-                                camera: cameraMatch ? cameraMatch[1].trim() : "Smooth movement"
-                            };
-                        });
-
-                        // Ensure we have 9 keyframes exactly
-                        const finalKFs = parsedKeyframes.length >= 9 ? parsedKeyframes.slice(0, 9) :
-                            [...parsedKeyframes, ...Array(9 - parsedKeyframes.length).fill({ action: "Cinematic subject context", camera: "Cinematic camera" })];
-
-                        updatedData.analysis = {
-                            full_text: data.text,
-                            theme: themeMatch ? themeMatch[1].trim() : "Cinematic Sequence",
-                            keyframes: finalKFs,
-                            contact_sheet_description: data.text.split('Master Contact Sheet Prompt')[1] ||
-                                data.text.split('<step 5')[1]?.split('</')[0] ||
-                                "3x3 Grid of 9 cinematic keyframes"
-                        };
-                    } else if (targetNode.type === 'imageSplitter') {
-                        updatedData.frames = data.frames;
-                    } else if (targetNode.type === 'videoGen') {
-                        updatedData.clips = data.clips;
-                        updatedData.output = data.clips[0];
-                    } else if (targetNode.type === 'assistant') {
-                        const userMsg = { role: 'user', content: customPrompt || targetNode.data.prompt || "Hello" };
-                        const aiMsg = { role: 'assistant', content: data.text || data.output };
-                        updatedData.history = [...(node.data.history || []), userMsg, aiMsg];
-                    } else if (targetNode.type === 'text') {
-                        updatedData.text = data.text || data.output;
-                    } else {
-                        updatedData.output = data.output;
-                        updatedData.usedPrompt = finalPrompt;
+            if (targetNode.type === 'aiAnalysis' && data.text) {
+                let parsedJSON = { shots: [] };
+                try {
+                    // Try to harvest JSON from code blocks first
+                    const jsonMatch = data.text.match(/```json\n([\s\S]*?)\n```/) || data.text.match(/\{[\s\S]*\}/);
+                    if (jsonMatch) {
+                        parsedJSON = JSON.parse(jsonMatch[1] || jsonMatch[0]);
                     }
+                } catch (e) {
+                    console.warn("Failed to parse strict JSON from analysis, falling back to regex extraction", e);
+                }
 
+                updatedData.analysis = {
+                    full_text: data.text,
+                    theme: parsedJSON.theme || "Cinematic Sequence",
+                    shots: parsedJSON.shots || [], // Store the structured shots
+                    // Legacy support for older templates
+                    keyframes: parsedJSON.shots ? parsedJSON.shots.map(s => ({ action: s.visual_description, camera: `Angle: ${s.camera_angle}, Move: ${s.camera_movement}` })) : [],
+                };
+            } else if (targetNode.type === 'imageSplitter') {
+                updatedData.frames = data.frames;
+            } else if (targetNode.type === 'videoGen') {
+                updatedData.clips = data.clips;
+                updatedData.output = data.clips[0];
+            } else if (targetNode.type === 'assistant') {
+                const userMsg = { role: 'user', content: customPrompt || targetNode.data.prompt || "Hello" };
+                const aiMsg = { role: 'assistant', content: data.text || data.output };
+                updatedData.history = [...(targetNode.data.history || []), userMsg, aiMsg];
+            } else if (targetNode.type === 'text') {
+                updatedData.text = data.text || data.output;
+            } else if (targetNode.type === 'adAdapter' || targetNode.type === 'verticalSuite') {
+                updatedData.outputs = data.outputs;
+            } else {
+                updatedData.output = data.output;
+                updatedData.usedPrompt = finalPrompt;
+            }
+
+            // 2. Synchronous ref update for topological order / sequential calls
+            const nextNodes = nodesRef.current.map(node => {
+                if (node.id === id) {
                     return { ...node, data: updatedData };
                 }
                 return node;
-            }));
+            });
+            nodesRef.current = nextNodes;
+
+            // 3. React state update
+            setNodes(nextNodes);
 
             // Autosave after completion
             setTimeout(() => saveProject(), 100);
@@ -717,34 +1394,42 @@ Hard requirements:
                 alert(`Generation Failed: ${error.message}`);
             }
 
-            setNodes((nds) => nds.map(node => {
+            const errorNodes = nodesRef.current.map(node => {
                 if (node.id === id) {
                     return { ...node, data: { ...node.data, loading: false, output: null } };
                 }
                 return node;
-            }));
+            });
+            nodesRef.current = errorNodes;
+            setNodes(errorNodes);
+
+            // Critical: Re-throw for chain interruption
+            if (isSubCall) throw error;
         }
     }, [saveProject, checkBillingPlan]);
 
     // Generate All Logic
     const onGenerateAll = useCallback(async () => {
-        const genNodes = nodesRef.current.filter(n =>
-            ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter'].includes(n.type)
+        const totalNodes = nodesRef.current.filter(n =>
+            ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter', 'text', 'assistant', 'adAdapter', 'verticalSuite'].includes(n.type)
         );
 
-        if (genNodes.length === 0) {
+        if (totalNodes.length === 0) {
             alert("No generation nodes found to run.");
             return;
         }
 
-        if (confirm(`Run workflow for all ${genNodes.length} generation nodes?`)) {
-            for (const node of genNodes) {
-                // We should ideally run in topological order, but for simplicity we run all
-                // If they have dependencies, the onGenerate logic might handle it or we might need order
-                await onGenerate(node.id);
+        if (confirm(`Run complete workflow for all ${totalNodes.length} creative nodes?`)) {
+            const order = getTopologicalOrder();
+            for (const stepId of order) {
+                const node = nodesRef.current.find(n => n.id === stepId);
+                if (['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter', 'text', 'assistant', 'adAdapter', 'verticalSuite'].includes(node.type)) {
+                    console.log(`🌊 Workflow Step: ${node.type} (${stepId})`);
+                    await onGenerate(stepId, null, true);
+                }
             }
         }
-    }, [onGenerate]);
+    }, [onGenerate, getTopologicalOrder]);
 
     // Handle Image Upload - Upload to server instead of Base64
     const handleImageUpload = useCallback(async (id, file) => {
@@ -752,57 +1437,86 @@ Hard requirements:
         console.log('📤 Uploading file for node:', id, file.name);
 
         // Show loading state
-        setNodes((nds) => nds.map((node) => {
-            if (node.id === id) {
-                return { ...node, data: { ...node.data, loading: true } };
-            }
-            return node;
-        }));
+        setNodes((nds) => {
+            const next = nds.map((node) => {
+                if (node.id === id) {
+                    return { ...node, data: { ...node.data, loading: true } };
+                }
+                return node;
+            });
+            nodesRef.current = next;
+            return next;
+        });
 
         try {
             const formData = new FormData();
             formData.append('file', file);
 
+            const controller = new AbortController();
+            const timeoutId = setTimeout(() => controller.abort(), 60000); // 1 minute timeout for large files
+
             const response = await fetch('/api/upload', {
                 method: 'POST',
-                body: formData
+                body: formData,
+                signal: controller.signal
             });
 
+            clearTimeout(timeoutId);
+
             if (!response.ok) {
-                throw new Error('Upload failed');
+                const errData = await response.json();
+                throw new Error(errData.error || 'Upload failed');
             }
 
             const data = await response.json();
             console.log('✅ Upload successful:', data.url);
 
             // Update node with URL (works for 'source' or 'sourceUpload')
-            setNodes((nds) => nds.map((node) => {
-                if (node.id === id) {
-                    return { ...node, data: { ...node.data, image: data.url, loading: false } };
-                }
-                return node;
-            }));
+            const isVideo = file.type.startsWith('video/');
+            setNodes((nds) => {
+                const next = nds.map((node) => {
+                    if (node.id === id) {
+                        return {
+                            ...node,
+                            data: {
+                                ...node.data,
+                                [isVideo ? 'video' : 'image']: data.url,
+                                // Clear the other one to avoid conflicts
+                                [isVideo ? 'image' : 'video']: null,
+                                loading: false
+                            }
+                        };
+                    }
+                    return node;
+                });
+                nodesRef.current = next;
+                return next;
+            });
 
             // Autosave after upload
-            setTimeout(() => saveProject(), 500);
+            saveProject();
 
         } catch (error) {
             console.error('Upload failed:', error);
-            alert('Failed to upload image. Please try again.');
 
-            // Clear loading state
-            setNodes((nds) => nds.map((node) => {
-                if (node.id === id) {
-                    return { ...node, data: { ...node.data, loading: false } };
-                }
-                return node;
-            }));
+            // Clear loading state and show error info
+            setNodes((nds) => {
+                const next = nds.map((node) => {
+                    if (node.id === id) {
+                        return { ...node, data: { ...node.data, loading: false } };
+                    }
+                    return node;
+                });
+                nodesRef.current = next;
+                return next;
+            });
+            alert(`Upload failed: ${error.message}`);
         }
     }, [saveProject, setNodes]);
 
     const applyCallbacks = useCallback((nds) => nds.map(node => {
         const isMedia = ['media', 'source', 'sourceUpload', 'instruction'].includes(node.type);
-        const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter', 'assistant', 'text'].includes(node.type);
+        const isGen = ['generation', 'aiImage', 'aiVideo', 'imageGen', 'videoGen', 'aiAnalysis', 'imageSplitter', 'assistant', 'text', 'adAdapter', 'verticalSuite'].includes(node.type);
 
         return {
             ...node,
@@ -812,7 +1526,26 @@ Hard requirements:
                 onDataChange: onNodeDataChange,
                 onImageUpload: isMedia ? handleImageUpload : undefined,
                 onExpand: (url) => setExpandedMedia(url),
-                onDelete: onNodeDelete
+                onDelete: onNodeDelete,
+                onModelToggle: (id, currentModel) => {
+                    let nextModel;
+                    if (currentModel.includes('veo')) {
+                        // Toggle video models
+                        const videoModels = ['veo-2.0-generate-001', 'veo-3.0-fast-generate-001', 'veo-3.1-generate-preview'];
+                        const idx = videoModels.indexOf(currentModel);
+                        nextModel = videoModels[(idx + 1) % videoModels.length];
+                        if (idx === -1) nextModel = videoModels[0];
+                    } else if (currentModel.includes('banana') || currentModel.includes('image')) {
+                        // Toggle image models
+                        const imageModels = ['nano-banana-pro-preview', 'gemini-2.5-flash-image'];
+                        nextModel = currentModel === imageModels[0] ? imageModels[1] : imageModels[0];
+                    } else {
+                        // Toggle text models
+                        const textModels = ['gemini-3-flash', 'gemini-3-pro'];
+                        nextModel = currentModel === textModels[0] ? textModels[1] : textModels[0];
+                    }
+                    onNodeDataChange(id, { model: nextModel });
+                }
             }
         };
     }), [onGenerate, onNodeDataChange, handleImageUpload, onNodeDelete]);
@@ -850,7 +1583,16 @@ Hard requirements:
         event.preventDefault();
         const file = event.dataTransfer.files[0];
         if (file && file.type.startsWith('image/')) {
-            handleImageUpload(file);
+            // Find if dropped over a media node
+            const x = event.clientX;
+            const y = event.clientY;
+            const elementAtPos = document.elementFromPoint(x, y);
+            const nodeElement = elementAtPos?.closest('.react-flow__node');
+            const nodeId = nodeElement?.getAttribute('data-id');
+
+            if (nodeId) {
+                handleImageUpload(nodeId, file);
+            }
         }
     }, [handleImageUpload]);
 
@@ -939,6 +1681,46 @@ Hard requirements:
         setIsNodeSelectorOpen(false);
     }, [selectorPos, onGenerate, onNodeDataChange, handleImageUpload, setNodes]);
 
+    // Dynamic Reference Image Sync
+    useEffect(() => {
+        if (edges.length === 0) return;
+
+        const getAllUpstreamImg = (nodeId, currentEdges, currentNodes, visited = new Set()) => {
+            if (visited.has(nodeId)) return [];
+            visited.add(nodeId);
+
+            const incoming = currentEdges.filter(e => e.target === nodeId);
+            let images = [];
+
+            for (const edge of incoming) {
+                const sn = currentNodes.find(n => n.id === edge.source);
+                if (!sn) continue;
+                const img = sn.data.output || sn.data.image;
+                if (img) images.push(img);
+                images = [...images, ...getAllUpstreamImg(sn.id, currentEdges, currentNodes, visited)];
+            }
+            return images;
+        };
+
+        setNodes(nds => {
+            let changed = false;
+            const newNodes = nds.map(node => {
+                const isGen = ['aiImage', 'imageGen', 'text', 'aiAnalysis', 'assistant', 'aiVideo', 'videoGen'].includes(node.type);
+                if (!isGen) return node;
+
+                const upstreamImages = getAllUpstreamImg(node.id, edges, nds);
+                const firstImg = upstreamImages[0] || null;
+
+                if (node.data.refImage !== firstImg) {
+                    changed = true;
+                    return { ...node, data: { ...node.data, refImage: firstImg } };
+                }
+                return node;
+            });
+            return changed ? newNodes : nds;
+        });
+    }, [edges]);
+
     const onAlign = useCallback((direction) => {
         const selectedNodes = nodes.filter(n => n.selected);
         if (selectedNodes.length < 2) return;
@@ -973,31 +1755,116 @@ Hard requirements:
         setIsNodeSelectorOpen(true);
     }, []);
 
-    const handleExport = () => {
-        if (credits < 2) {
-            alert("Insufficient credits for export!");
-            return;
-        }
+    const handleExport = async () => {
         setIsExporting(true);
 
-        // Simulate multi-format generation
-        setTimeout(() => {
-            const cost = selectedRatios.length * 2;
-            if (credits < cost) {
-                alert("Insufficient credits for selected variations!");
-                setIsExporting(false);
-                return;
+        try {
+            // Create the Report Template
+            const reportId = `report-${Date.now()}`;
+            const reportDiv = document.createElement('div');
+            reportDiv.id = reportId;
+            reportDiv.style.position = 'absolute';
+            reportDiv.style.left = '-9999px';
+            reportDiv.style.width = '800px';
+            reportDiv.style.background = '#ffffff';
+            reportDiv.style.color = '#0f172a';
+            reportDiv.style.fontFamily = 'Inter, sans-serif';
+            reportDiv.style.padding = '40px';
+
+            // Header
+            let html = `
+                <div style="border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; margin-bottom: 40px;">
+                    <h1 style="font-size: 28px; margin: 0; color: #f97316;">Creative Process Report</h1>
+                    <p style="color: #64748b; margin: 4px 0 0 0;">Project: ${projectName}</p>
+                    <p style="color: #94a3b8; font-size: 12px; margin: 4px 0 0 0;">Generated on: ${new Date().toLocaleString()}</p>
+                </div>
+            `;
+
+            // Nodes Section
+            const workflowNodes = getTopologicalOrder();
+            html += `<div style="display: flex; flex-direction: column; gap: 30px;">`;
+
+            for (const stepId of workflowNodes) {
+                const node = nodesRef.current.find(n => n.id === stepId);
+                const isInstruction = node.type === 'instruction';
+                const isMedia = ['media', 'source'].includes(node.type);
+                const isGen = ['aiImage', 'imageGen', 'text', 'aiAnalysis', 'assistant'].includes(node.type);
+
+                html += `
+                    <div style="background: #f8fafc; border-radius: 16px; padding: 24px; border: 1px solid #e2e8f0;">
+                        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+                            <span style="font-weight: 800; font-size: 14px; text-transform: uppercase; color: #94a3b8;">${node.type}</span>
+                            <span style="font-size: 12px; color: #64748b;">ID: ${node.id}</span>
+                        </div>
+                `;
+
+                // Details
+                if (isMedia && node.data.image) {
+                    html += `
+                        <p style="margin: 0 0 12px 0; font-weight: 600;">Action: Image Upload</p>
+                        <img src="${node.data.image}" style="width: 100%; max-height: 300px; object-fit: contain; border-radius: 8px;" />
+                    `;
+                } else if (isGen) {
+                    const prompt = node.data.prompt || node.data.text || "Automatic Workflow Prompt";
+                    const output = node.data.output || node.data.text || node.data.analysis?.full_text;
+                    const model = node.data.model || (node.type.includes('Image') ? 'nano-banana-pro-preview' : 'gemini-3-flash-preview');
+
+                    html += `
+                        <p style="margin: 0 0 4px 0; font-weight: 600; color: #0f172a;">Prompt:</p>
+                        <div style="background: white; border-radius: 8px; padding: 12px; font-size: 13px; color: #475569; margin-bottom: 16px; border: 1px solid #f1f5f9;">${prompt}</div>
+                        
+                        <p style="margin: 0 0 4px 0; font-weight: 600; color: #0f172a;">AI Output (${model}):</p>
+                        ${output && output.startsWith('data:image') || (output && output.includes('uploads/')) ?
+                            `<img src="${output}" style="width: 100%; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.1);" />` :
+                            `<div style="background: white; border-radius: 8px; padding: 12px; font-size: 13px; color: #0f172a; line-height: 1.6; border-left: 4px solid #f97316;">${output || 'In Progress...'}</div>`
+                        }
+                    `;
+                } else if (node.type === 'adAdapter' && node.data.outputs) {
+                    html += `
+                        <p style="margin: 0 0 12px 0; font-weight: 600;">Programmatic Ad Suite (16 Variants):</p>
+                        <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px;">
+                            ${node.data.outputs.map((img, i) => `
+                                <div style="border: 1px solid #e2e8f0; border-radius: 4px; overflow: hidden; background: white;">
+                                    <img src="${img}" style="width: 100%; height: auto; display: block;" />
+                                </div>
+                            `).join('')}
+                        </div>
+                    `;
+                } else {
+                    html += `<p style="margin: 0; color: #64748b;">Content: ${node.data.label || node.data.text || 'No data available'}</p>`;
+                }
+
+                html += `</div>`;
             }
 
-            setCredits(c => c - cost);
-            setIsExporting(false);
+            html += `</div>`;
+            reportDiv.innerHTML = html;
+            document.body.appendChild(reportDiv);
+
+            // Wait for images to load
+            await new Promise(r => setTimeout(r, 2000));
+
+            const canvas = await html2canvas(reportDiv, { scale: 2, useCORS: true });
+            const imgData = canvas.toDataURL('image/png');
+            const pdf = new jsPDF('p', 'mm', 'a4');
+            const imgProps = pdf.getImageProperties(imgData);
+            const pdfWidth = pdf.internal.pageSize.getWidth();
+            const pdfHeight = (imgProps.height * pdfWidth) / imgProps.width;
+
+            pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight);
+            pdf.save(`${projectName.replace(/\s+/g, '_')} _process_report.pdf`);
+
+            document.body.removeChild(reportDiv);
+            setCredits(c => Math.max(0, c - 5));
             setIsExportModalOpen(false);
+            alert("Process PDF exported successfully! (5 🪙 deducted)");
 
-            // Save to Campaigns (LocalStorage)
-            saveProject();
-
-            alert(`${selectedRatios.length} variation(s) exported and project saved!`);
-        }, 2000);
+        } catch (err) {
+            console.error("PDF Export failed:", err);
+            alert("Failed to generate PDF report. Check console for details.");
+        } finally {
+            setIsExporting(false);
+        }
     };
 
     const toggleRatio = (ratio) => {
@@ -1013,7 +1880,7 @@ Hard requirements:
             {/* Top Bar */}
             <header className="canvas-header">
                 <div className="project-info">
-                    <span className="back-arrow" onClick={() => router.push('/dashboard')}>←</span>
+                    <span className="back-arrow" onClick={() => router.push('/campaigns')}>←</span>
                     <div>
                         <input
                             type="text"
@@ -1144,6 +2011,13 @@ Hard requirements:
                                     <p>AI Chat/Helper node</p>
                                 </div>
                             </div>
+                            <div className="selector-item" onClick={() => addNode('adAdapter')}>
+                                <span className="icon">📐</span>
+                                <div className="info">
+                                    <h3>Ad Adapter</h3>
+                                    <p>16 IAB adaptations</p>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -1205,8 +2079,22 @@ Hard requirements:
                 <div className="lightbox-overlay" onClick={() => setExpandedMedia(null)}>
                     <div className="lightbox-content" onClick={e => e.stopPropagation()}>
                         <button className="close-lightbox" onClick={() => setExpandedMedia(null)}>×</button>
-                        {expandedMedia.includes('.mp4') || expandedMedia.startsWith('data:video') ? (
-                            <video src={expandedMedia} controls autoPlay className="full-view-media" />
+                        {expandedMedia && (
+                            expandedMedia.includes('.mp4') ||
+                            expandedMedia.startsWith('data:video') ||
+                            expandedMedia.includes('generativelanguage.googleapis.com') ||
+                            expandedMedia.includes('videointelligence.googleapis.com')
+                        ) ? (
+                            <video
+                                src={expandedMedia}
+                                controls
+                                autoPlay
+                                className="full-view-media"
+                                onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    console.warn("Expanded video failed to load");
+                                }}
+                            />
                         ) : (
                             <img src={expandedMedia} alt="Full View" className="full-view-media" />
                         )}
@@ -1348,7 +2236,7 @@ Hard requirements:
                 .modal-overlay {
                     position: fixed;
                     inset: 0;
-                    background: rgba(0,0,0,0.5);
+                    background: rgba(0, 0, 0, 0.5);
                     backdrop-filter: blur(4px);
                     display: flex;
                     align-items: center;
@@ -1395,7 +2283,7 @@ Hard requirements:
                 .selector-item .info h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 2px; }
                 .selector-item .info p { font-size: 0.75rem; color: #64748b; }
 
-                /* Export Modal (Restored) */
+                /* Export Modal */
                 .modal-content {
                     background: white;
                     border-radius: 24px;
@@ -1419,7 +2307,7 @@ Hard requirements:
                 .lightbox-overlay {
                     position: fixed;
                     inset: 0;
-                    background: rgba(0,0,0,0.9);
+                    background: rgba(0, 0, 0, 0.9);
                     backdrop-filter: blur(10px);
                     display: flex;
                     align-items: center;
@@ -1439,7 +2327,7 @@ Hard requirements:
                     max-width: 100%;
                     max-height: 80vh;
                     border-radius: 12px;
-                    box-shadow: 0 20px 50px rgba(0,0,0,0.5);
+                    box-shadow: 0 20px 50px rgba(0, 0, 0, 0.5);
                 }
                 .close-lightbox {
                     position: absolute;
@@ -1471,12 +2359,12 @@ Hard requirements:
 
                 /* Move attribution and customize controls */
                 :global(.react-flow__attribution) {
-                    top: 10px !important;
-                    bottom: auto !important;
-                    background: rgba(255, 255, 255, 0.7) !important;
-                    padding: 2px 8px !important;
-                    border-top-right-radius: 0 !important;
-                    border-bottom-left-radius: 8px !important;
+                    top: 10px!important;
+                    bottom: auto!important;
+                    background: rgba(255, 255, 255, 0.7)!important;
+                    padding: 2px 8px!important;
+                    border-top-right-radius: 0!important;
+                    border-bottom-left-radius: 8px!important;
                 }
 
                 .tool-btn.secondary {
@@ -1495,9 +2383,9 @@ Hard requirements:
                 }
 
                 :global(.react-flow__controls) {
-                    box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-                    border: 1px solid #e2e8f0 !important;
-                    border-radius: 12px !important;
+                    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1)!important;
+                    border: 1px solid #e2e8f0!important;
+                    border-radius: 12px!important;
                     overflow: hidden;
                 }
             `}</style>

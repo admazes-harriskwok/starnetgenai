@@ -31,10 +31,28 @@ export const getProjectsFromDB = async () => {
     return new Promise((resolve, reject) => {
         const transaction = db.transaction(['projects'], 'readonly');
         const store = transaction.objectStore('projects');
-        const request = store.getAll();
+        const projects = [];
 
-        request.onsuccess = () => resolve(request.result);
-        request.onerror = () => reject(request.error);
+        const request = store.openCursor();
+
+        request.onsuccess = (event) => {
+            const cursor = event.target.result;
+            if (cursor) {
+                try {
+                    projects.push(cursor.value);
+                } catch (e) {
+                    console.error("IndexedDB Read Error: Skipping malformed or too-large project entry.", e);
+                }
+                cursor.continue();
+            } else {
+                resolve(projects);
+            }
+        };
+
+        request.onerror = (event) => {
+            console.error("IndexedDB Transaction Error:", event.target.error);
+            reject(event.target.error);
+        };
     });
 };
 

@@ -1,10 +1,18 @@
 "use client";
 import React, { memo, useState } from 'react';
 import { Handle, Position, NodeToolbar } from 'reactflow';
+import { getDisplayName } from '../../lib/models';
 
 export default memo(({ id, data, selected }) => {
     const [text, setText] = useState(data.text || '');
     const [aiInput, setAiInput] = useState('');
+
+    // Sync local state when external data changes (e.g., after AI generation)
+    React.useEffect(() => {
+        if (data.text !== undefined) {
+            setText(data.text || '');
+        }
+    }, [data.text]);
 
     const handleChange = (e) => {
         setText(e.target.value);
@@ -24,25 +32,27 @@ export default memo(({ id, data, selected }) => {
 
             <div className="node-header">
                 <span className="icon">💬</span>
-                Text / Prompt
+                {data.label || 'Text / Prompt'}
             </div>
 
             <div className="node-content">
                 <textarea
                     value={text}
                     onChange={handleChange}
-                    placeholder="Enter prompt or text content..."
+                    placeholder={data.placeholder || "Enter prompt or text content..."}
                     className="text-input"
                 />
             </div>
 
             <div className="ai-input-bar">
-                <div className="input-top">
-                    <div className="ref-image-mini">
-                        <img src="https://images.unsplash.com/photo-1542496658-e33a6d0d50f6?w=50" alt="ref" />
-                        <span className="badge">1</span>
+                {data.refImage && (
+                    <div className="input-top">
+                        <div className="ref-image-mini">
+                            <img src={data.refImage} alt="ref" />
+                            <span className="badge">1</span>
+                        </div>
                     </div>
-                </div>
+                )}
                 <div className="input-middle">
                     <textarea
                         className="ai-chat-input"
@@ -53,9 +63,9 @@ export default memo(({ id, data, selected }) => {
                     />
                 </div>
                 <div className="input-bottom">
-                    <div className="model-selector">
+                    <div className="model-selector" onClick={() => data.onModelToggle(id, data.model || 'gemini-3-flash')}>
                         <span className="g-icon">G</span>
-                        Gemini 2.5 Flash Lite
+                        {getDisplayName(data.model || 'gemini-3-flash')}
                         <span className="chevron">⌄</span>
                     </div>
                     <div className="actions-right">
@@ -267,6 +277,6 @@ export default memo(({ id, data, selected }) => {
                     border: 2px solid white !important;
                 }
             `}</style>
-        </div>
+        </div >
     );
 });

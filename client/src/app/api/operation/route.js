@@ -27,6 +27,12 @@ export async function GET(request, { params }) {
             return NextResponse.json({ error: data.error?.message || 'Failed to fetch operation status' }, { status: response.status });
         }
 
+        // Diagnostic logging
+        console.log(`📡 [LRO Poll] ${operationId}: done=${!!data.done}, hasResponse=${!!data.response}, hasMetadata=${!!data.metadata}`);
+        if (data.done && !data.response && !data.error) {
+            console.warn(`⚠️ [LRO Poll] Warning: Operation ${operationId} reported done but has no response body.`, JSON.stringify(data));
+        }
+
         // Return the LRO state
         return NextResponse.json(data);
     } catch (error) {

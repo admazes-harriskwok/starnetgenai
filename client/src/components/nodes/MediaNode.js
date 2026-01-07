@@ -38,7 +38,7 @@ export default memo(({ id, data, selected }) => {
 
             <div className="node-header">
                 <span className="icon">📂</span>
-                Media Asset
+                {data.label || 'Media Asset'}
             </div>
 
             <div className="node-content">
@@ -50,12 +50,31 @@ export default memo(({ id, data, selected }) => {
                     onChange={handleFileChange}
                 />
 
-                {data.image || data.video ? (
+                {data.loading ? (
+                    <div className="upload-zone loading">
+                        <div className="spinner"></div>
+                        <p>Uploading...</p>
+                    </div>
+                ) : (data.image || data.video || data.output) ? (
                     <div className="preview-wrapper" onClick={onBoxClick}>
-                        {data.video ? (
-                            <video src={data.video} className="preview-media" autoPlay muted loop />
+                        {(data.video || (data.output && typeof data.output === 'string' && (
+                            data.output.includes('.mp4') ||
+                            data.output.includes('generativelanguage.googleapis.com') ||
+                            data.output.includes('videointelligence.googleapis.com')
+                        ))) ? (
+                            <video
+                                src={data.video || data.output}
+                                className="preview-media"
+                                autoPlay
+                                muted
+                                loop
+                                onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    console.warn("Video failed to load in MediaNode");
+                                }}
+                            />
                         ) : (
-                            <img src={data.image} alt="Media" className="preview-media" />
+                            <img src={data.image || data.output} alt="Media" className="preview-media" />
                         )}
                     </div>
                 ) : (
@@ -150,6 +169,15 @@ export default memo(({ id, data, selected }) => {
                 .toolbar-btn.delete:hover {
                     background: #ef4444;
                     color: white;
+                }
+                .spinner {
+                    width: 24px;
+                    height: 24px;
+                    border: 3px solid #f9731633;
+                    border-top: 3px solid #f97316;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    margin-bottom: 8px;
                 }
                 @keyframes spin {
                     from { transform: rotate(0deg); }

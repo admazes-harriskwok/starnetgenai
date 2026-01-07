@@ -1,6 +1,7 @@
 "use client";
 import React, { memo } from 'react';
 import { Handle, Position, NodeToolbar } from 'reactflow';
+import { getDisplayName } from '../../../lib/models';
 
 export default memo(({ id, data, selected }) => {
     const analysis = data.analysis;
@@ -17,31 +18,29 @@ export default memo(({ id, data, selected }) => {
 
             <div className="node-header">
                 <span className="icon">🎬</span>
-                Director AI Breakdown
+                {data.label || 'Director AI Breakdown'}
             </div>
 
             <div className="node-content">
-                {!analysis ? (
+                <div className="instruction-box">
+                    <label>Analysis Instructions (Editable)</label>
+                    <textarea
+                        className="instruction-input"
+                        placeholder="Special instructions for Director AI..."
+                        value={data.prompt || ''}
+                        onChange={(e) => data.onDataChange(id, { prompt: e.target.value })}
+                        rows={data.analysis ? 2 : 5}
+                    />
+                </div>
+
+                {data.loading ? (
                     <div className="placeholder">
-                        <div className="instruction-box">
-                            <label>Analysis Instructions (Editable)</label>
-                            <textarea
-                                className="instruction-input"
-                                placeholder="Special instructions for Director AI..."
-                                value={data.prompt || ''}
-                                onChange={(e) => data.onDataChange(id, { prompt: e.target.value })}
-                            />
-                        </div>
-                        {data.loading ? (
-                            <div className="loader">Analyzing Scene...</div>
-                        ) : (
-                            <p>Ready to Analyze Reference</p>
-                        )}
+                        <div className="loader">Analyzing Scene...</div>
                     </div>
-                ) : (
+                ) : analysis ? (
                     <div className="analysis-result">
                         <div className="section">
-                            <label>Director's Script (Editable)</label>
+                            <label>📽️ Generated Director Script</label>
                             <textarea
                                 className="script-editor"
                                 value={analysis.full_text || ''}
@@ -52,16 +51,36 @@ export default memo(({ id, data, selected }) => {
                             />
                         </div>
 
-                        <div className="compact-meta">
-                            <div className="meta-item">
-                                <label>KF Count</label>
-                                <span>{analysis.keyframes?.length || 0}</span>
+                        {analysis.keyframes && analysis.keyframes.length > 0 && (
+                            <div className="section">
+                                <label>🎬 Extracted Keyframes</label>
+                                <div className="keyframes-summary">
+                                    {analysis.keyframes.slice(0, 3).map((kf, i) => (
+                                        <div key={i} className="kf-mini-row">
+                                            <span className="kf-idx">{i + 1}</span>
+                                            <div className="kf-details">
+                                                <p className="kf-action">{kf.action}</p>
+                                                <p className="kf-camera">{kf.camera}</p>
+                                            </div>
+                                        </div>
+                                    ))}
+                                    {analysis.keyframes.length > 3 && (
+                                        <div className="kf-more">...and {analysis.keyframes.length - 3} more shots</div>
+                                    )}
+                                </div>
                             </div>
+                        )}
+
+                        <div className="compact-meta">
                             <div className="meta-item">
                                 <label>Theme</label>
                                 <span>{analysis.theme || 'Proposing...'}</span>
                             </div>
                         </div>
+                    </div>
+                ) : (
+                    <div className="placeholder">
+                        <p>Ready to Analyze Reference</p>
                     </div>
                 )}
 
@@ -73,12 +92,34 @@ export default memo(({ id, data, selected }) => {
                     >
                         {data.loading ? 'Generating...' : analysis ? 'Regenerate Analysis' : 'Run Director AI (1 🪙)'}
                     </button>
+                    <div className="model-badge">
+                        <span className="dot"></span>
+                        AI Engine: {getDisplayName(data.model || 'gemini-3-flash')}
+                    </div>
                 </div>
             </div>
 
             <Handle type="source" position={Position.Right} className="handle-dot" />
 
             <style jsx>{`
+                .model-badge {
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    font-size: 0.65rem;
+                    color: #94A3B8;
+                    margin-top: 10px;
+                    padding-top: 8px;
+                    border-top: 1px solid #f1f5f9;
+                    font-weight: 600;
+                    text-transform: uppercase;
+                }
+                .model-badge .dot {
+                    width: 6px;
+                    height: 6px;
+                    background: #10B981;
+                    border-radius: 50%;
+                }
                 .node-container {
                     background: white;
                     border-radius: 12px;
@@ -162,6 +203,40 @@ export default memo(({ id, data, selected }) => {
                     padding: 10px;
                     border-radius: 8px;
                 }
+                .keyframes-summary {
+                    display: flex;
+                    flex-direction: column;
+                    gap: 6px;
+                    background: #f8fafc;
+                    padding: 8px;
+                    border-radius: 8px;
+                }
+                .kf-mini-row {
+                    display: flex;
+                    gap: 8px;
+                    align-items: flex-start;
+                    padding-bottom: 6px;
+                    border-bottom: 1px solid #edf2f7;
+                }
+                .kf-mini-row:last-child { border-bottom: none; }
+                .kf-idx {
+                    font-size: 0.65rem;
+                    font-weight: 800;
+                    color: #ff6b3d;
+                    background: #fff5f0;
+                    width: 16px;
+                    height: 16px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 4px;
+                    margin-top: 2px;
+                }
+                .kf-details { flex: 1; pointer-events: none; }
+                .kf-action { font-size: 0.75rem; font-weight: 600; color: #1e293b; margin: 0; line-height: 1.2; }
+                .kf-camera { font-size: 0.65rem; color: #64748b; margin: 2px 0 0 0; font-style: italic; }
+                .kf-more { font-size: 0.65rem; color: #94a3b8; text-align: center; margin-top: 4px; font-weight: 600; }
+
                 .meta-item { display: flex; flex-direction: column; gap: 2px; }
                 .meta-item label { font-size: 0.6rem; font-weight: 800; color: #64748B; text-transform: uppercase; }
                 .meta-item span { font-size: 0.75rem; font-weight: 600; color: #1A1C1E; }

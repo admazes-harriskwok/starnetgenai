@@ -1,6 +1,7 @@
 "use client";
 import React, { memo } from 'react';
 import { Handle, Position, NodeToolbar } from 'reactflow';
+import { getDisplayName } from '../../../lib/models';
 
 export default memo(({ id, data, selected }) => {
     return (
@@ -8,6 +9,7 @@ export default memo(({ id, data, selected }) => {
             <NodeToolbar isVisible={selected} position={Position.Top}>
                 <div className="toolbar-wrapper">
                     <button className="toolbar-btn" onClick={() => data.onGenerate(id)}>Generate</button>
+                    <button className="toolbar-btn" onClick={() => data.onDataChange(id, { output: null })}>🧹 Clear Output</button>
                     <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
                 </div>
             </NodeToolbar>
@@ -58,11 +60,24 @@ export default memo(({ id, data, selected }) => {
                 >
                     {data.loading ? 'Generating...' : data.output ? 'Regenerate Storyboard' : 'Generate Storyboard (4 🪙)'}
                 </button>
+                <div className="model-footer">
+                    Model: {getDisplayName(data.model || 'gemini-2.5-flash-image')}
+                </div>
             </div>
 
             <Handle type="source" position={Position.Right} className="handle-dot" />
 
             <style jsx>{`
+                .model-footer {
+                    font-size: 0.6rem;
+                    color: #94a3b8;
+                    font-weight: 700;
+                    text-transform: uppercase;
+                    margin-top: 8px;
+                    border-top: 1px solid #f1f5f9;
+                    padding-top: 4px;
+                    text-align: right;
+                }
                 .node-container {
                     background: white;
                     border-radius: 12px;

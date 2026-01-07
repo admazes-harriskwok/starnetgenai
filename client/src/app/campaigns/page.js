@@ -2,13 +2,14 @@
 import React, { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { TEMPLATES } from '../../config/templates';
-import { getProjectsFromDB } from '../../lib/db';
+import { getProjectsFromDB, deleteProjectFromDB } from '../../lib/db';
 
 export default function CampaignsPage() {
   const router = useRouter();
   const [projects, setProjects] = useState([]);
   const [projectSearch, setProjectSearch] = useState('');
   const [templateSearch, setTemplateSearch] = useState('');
+  const [templateCategory, setTemplateCategory] = useState('All');
   const [ratioFilter, setRatioFilter] = useState('All');
 
   useEffect(() => {
@@ -20,6 +21,17 @@ export default function CampaignsPage() {
     };
     load();
   }, []);
+  const handleDeleteProject = async (id) => {
+    if (confirm('Are you sure you want to permanently delete this project? This cannot be undone.')) {
+      try {
+        await deleteProjectFromDB(id);
+        setProjects(prev => prev.filter(p => p.id !== id));
+      } catch (error) {
+        console.error('Failed to delete project:', error);
+        alert('Failed to delete project.');
+      }
+    }
+  };
 
   const handleStartBlank = () => {
     router.push('/canvas');
@@ -50,9 +62,12 @@ export default function CampaignsPage() {
   };
 
   const filteredTemplates = Object.values(TEMPLATES).filter(tmpl => {
+
     const matchesSearch = tmpl.name.toLowerCase().includes(templateSearch.toLowerCase());
     const matchesRatio = ratioFilter === 'All' || tmpl.ratio === ratioFilter;
-    return matchesSearch && matchesRatio;
+    const matchesCategory = templateCategory === 'All' || tmpl.category === templateCategory;
+
+    return matchesSearch && matchesRatio && matchesCategory;
   });
 
   const filteredProjects = projects.filter(p =>
@@ -75,25 +90,38 @@ export default function CampaignsPage() {
         <section className="create-section">
           <div className="section-header">
             <h2 className="section-title">Start a New Campaign</h2>
-            <div className="filter-controls">
-              <div className="search-bar">
-                <input
-                  type="text"
-                  placeholder="Search templates..."
-                  value={templateSearch}
-                  onChange={(e) => setTemplateSearch(e.target.value)}
-                />
-              </div>
-              <div className="ratio-filters">
-                {['All', '9:16', '1:1', '16:9'].map(ratio => (
+            <div className="filter-controls-column">
+              <div className="category-tabs">
+                {['All', 'Generate Image', 'Generate Video', 'Edit Image'].map(cat => (
                   <button
-                    key={ratio}
-                    className={`ratio-btn ${ratioFilter === ratio ? 'active' : ''}`}
-                    onClick={() => setRatioFilter(ratio)}
+                    key={cat}
+                    className={`cat-tab ${templateCategory === cat ? 'active' : ''}`}
+                    onClick={() => setTemplateCategory(cat)}
                   >
-                    {ratio}
+                    {cat}
                   </button>
                 ))}
+              </div>
+              <div className="filter-row">
+                <div className="search-bar">
+                  <input
+                    type="text"
+                    placeholder="Search templates..."
+                    value={templateSearch}
+                    onChange={(e) => setTemplateSearch(e.target.value)}
+                  />
+                </div>
+                <div className="ratio-filters">
+                  {['All', '9:16', '1:1', '16:9'].map(ratio => (
+                    <button
+                      key={ratio}
+                      className={`ratio-btn ${ratioFilter === ratio ? 'active' : ''}`}
+                      onClick={() => setRatioFilter(ratio)}
+                    >
+                      {ratio}
+                    </button>
+                  ))}
+                </div>
               </div>
             </div>
           </div>
@@ -121,7 +149,10 @@ export default function CampaignsPage() {
                 </div>
                 <div className="card-info">
                   <h3>{tmpl.name}</h3>
-                  <p>{tmpl.nodes.length} specialized nodes</p>
+                  <div className="card-meta-row">
+                    <span className="cat-pill">{tmpl.category || 'General'}</span>
+                    <span className="node-count">{tmpl.nodes.length} nodes</span>
+                  </div>
                 </div>
               </div>
             ))}
@@ -158,6 +189,16 @@ export default function CampaignsPage() {
                     )}
                     <div className="overlay">
                       <span className="open-label">Open Canvas</span>
+                      <button
+                        className="delete-project-btn"
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          handleDeleteProject(project.id);
+                        }}
+                        title="Delete Project"
+                      >
+                        🗑️
+                      </button>
                     </div>
                   </div>
                   <div className="project-info">
@@ -236,7 +277,43 @@ export default function CampaignsPage() {
             margin-bottom: 24px;
         }
 
-        .filter-controls {
+        /* Filter Layout */
+        .filter-controls-column {
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+            width: 100%;
+        }
+
+        .category-tabs {
+            display: flex;
+            gap: 12px;
+            padding-bottom: 4px;
+        }
+
+        .cat-tab {
+            background: white;
+            border: 1px solid #e2e8f0;
+            padding: 8px 16px;
+            border-radius: 20px;
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #64748b;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+
+        .cat-tab.active {
+            background: #0f172a;
+            color: white;
+            border-color: #0f172a;
+        }
+
+        .cat-tab:hover:not(.active) {
+            background: #f1f5f9;
+        }
+
+        .filter-row {
             display: flex;
             gap: 24px;
             align-items: center;
@@ -285,12 +362,42 @@ export default function CampaignsPage() {
           cursor: pointer;
           transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
           border: 1px solid #e2e8f0;
+          position: relative;
         }
 
         .template-card:hover {
           transform: translateY(-8px);
           box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
           border-color: #fdba74;
+        }
+        
+        .delete-project-btn {
+            position: absolute;
+            top: 12px;
+            right: 12px;
+            background: white;
+            border: 1px solid #e2e8f0;
+            width: 28px;
+            height: 28px;
+            border-radius: 6px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            font-size: 0.8rem;
+            opacity: 0;
+            transition: all 0.2s;
+            z-index: 10;
+        }
+        
+        .delete-project-btn:hover {
+            background: #fee2e2;
+            color: #ef4444;
+            border-color: #fecaca;
+        }
+
+        .project-card:hover .delete-project-btn {
+            opacity: 1;
         }
 
         .card-visual {
@@ -321,7 +428,7 @@ export default function CampaignsPage() {
         .template-badge {
           position: absolute;
           top: 12px;
-          right: 12px;
+          left: 12px; /* moved to left to make room for delete on right */
           background: #e2e8f0;
           color: #475569;
           font-size: 0.65rem;
@@ -332,15 +439,7 @@ export default function CampaignsPage() {
         }
 
         .ratio-tag-preview {
-          position: absolute;
-          top: 12px;
-          left: 12px;
-          background: rgba(249, 115, 22, 0.1);
-          color: #f97316;
-          font-size: 0.7rem;
-          font-weight: 700;
-          padding: 3px 8px;
-          border-radius: 6px;
+          display: none; /* Hide old tag, replacing with meta row */
         }
 
         .node-preview {
@@ -363,12 +462,28 @@ export default function CampaignsPage() {
           font-size: 1.1rem;
           font-weight: 600;
           color: #1e293b;
-          margin-bottom: 4px;
+          margin-bottom: 8px;
         }
 
-        .card-info p {
-          font-size: 0.9rem;
-          color: #64748b;
+        .card-meta-row {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .cat-pill {
+            font-size: 0.7rem;
+            font-weight: 700;
+            background: #f1f5f9;
+            color: #64748b;
+            padding: 4px 8px;
+            border-radius: 6px;
+            text-transform: uppercase;
+        }
+
+        .node-count {
+          font-size: 0.8rem;
+          color: #94a3b8;
         }
 
         /* Projects Section (Bottom Half) */

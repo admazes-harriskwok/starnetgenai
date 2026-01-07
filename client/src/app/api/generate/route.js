@@ -33,14 +33,20 @@ export async function POST(request) {
         }
 
         // Default to the requested model
-        const model = userModel || 'gemini-2.5-flash-image';
+        const model = userModel || 'nano-banana-pro-preview';
 
-        // Determine if this is a text-focused model or a video-focused LRO model
-        const isTextModel = model.includes('flash') || model.includes('pro-text') || model.includes('pro-vision') && !model.includes('image');
+        // Identify model capability profile
+        const isImageModel = model.includes('imagen') || model.includes('banana') || model.includes('image');
         const isVideoModel = model.includes('veo');
+        const isTextModel = !isImageModel && !isVideoModel;
 
-        // Gemini Multinodal prompt logic
-        const parts = [{ text: prompt }];
+        // For Gemini Content API, aspectRatio belongs in the prompt/instructions, not generationConfig
+        const finalPromptWithRatio = (isImageModel && body.aspectRatio)
+            ? `${prompt}\n\n[System Instruction: Generate in ${body.aspectRatio} aspect ratio]`
+            : prompt;
+
+        // Gemini Multimodal prompt logic
+        const parts = [{ text: finalPromptWithRatio }];
 
         // Add images if provided (support multiple for node chaining)
         const images = body.images || (body.image ? [body.image] : []);
@@ -63,19 +69,46 @@ export async function POST(request) {
 
         if (isVideoModel) {
             method = 'predictLongRunning';
-            // Veo / Video Prediction Payload Format
+
+            // Extract the first image directly for Video Prediction
+            const firstImage = images && images[0];
+            let imagePayload = null;
+
+            if (firstImage) {
+                const match = firstImage.match(/^data:(.+);base64,(.+)$/);
+                if (match) {
+                    imagePayload = {
+                        bytesBase64Encoded: match[2],
+                        mimeType: match[1]
+                    };
+                }
+            }
+
+            console.log(`🎬 [API] Sending to Video Model: "${prompt.substring(0, 100)}..."`);
+            console.log(`🎬 [API] Start Frame Provided: ${!!imagePayload}`);
+
+            // Verify and map aspect ratio for Veo (Only supports 16:9 or 9:16)
+            let videoAspectRatio = body.aspectRatio || "16:9";
+            if (!["16:9", "9:16"].includes(videoAspectRatio)) {
+                // Heuristic: If height > width, use 9:16, else 16:9
+                if (videoAspectRatio.includes(':')) {
+                    const [w, h] = videoAspectRatio.split(':').map(Number);
+                    videoAspectRatio = (h > w) ? "9:16" : "16:9";
+                } else {
+                    videoAspectRatio = "16:9";
+                }
+            }
+
             payload = {
                 instances: [
                     {
                         prompt: prompt,
-                        image: {
-                            bytesBase64Encoded: parts.find(p => p.inline_data)?.inline_data?.data,
-                            mimeType: parts.find(p => p.inline_data)?.inline_data?.mime_type || "image/png"
-                        }
+                        image: imagePayload
                     }
                 ],
                 parameters: {
-                    aspectRatio: "16:9"
+                    aspectRatio: videoAspectRatio,
+                    sampleCount: 1
                 }
             };
         } else {
@@ -109,6 +142,7 @@ export async function POST(request) {
         console.log('--- GEMINI API DEBUG ---');
         console.log('Model:', model);
         console.log('Method:', method);
+        console.log('API Key Hint:', apiKey ? `${apiKey.substring(0, 4)}...${apiKey.substring(apiKey.length - 4)}` : 'MISSING');
         console.log('Prompt Length:', prompt.length);
         console.log('Has Image Content:', !!images.length);
         console.log('Is Text Model:', isTextModel);
@@ -185,7 +219,7 @@ export async function POST(request) {
                 output: null,
                 text: output,
                 type: 'text',
-                error: isTextModel ? null : `Model returned text instead of an image: "${output.substring(0, 100)}${output.length > 100 ? '...' : ''}"`
+                error: (isImageModel && !textResponse && !output) ? `Model returned text instead of an image: "${output?.substring(0, 100)}..."` : null
             }, { status: 200 });
         }
 
@@ -195,7 +229,12 @@ export async function POST(request) {
         });
 
     } catch (error) {
-        console.error('Detailed API Error:', error);
-        return NextResponse.json({ error: `Internal Server Error: ${error.message}` }, { status: 500 });
+        console.error('❌ Detailed API Error:', error);
+        if (error.cause) {
+            console.error('❌ Error Cause:', error.cause);
+        }
+        return NextResponse.json({
+            error: `Internal Server Error: ${error.message}${error.cause ? ' (Cause: ' + error.cause.message + ')' : ''}`
+        }, { status: 500 });
     }
 }
