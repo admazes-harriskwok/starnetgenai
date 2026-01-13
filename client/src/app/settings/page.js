@@ -9,7 +9,7 @@ export default function SettingsPage() {
     const [status, setStatus] = useState('');
 
     useEffect(() => {
-        const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
+        const config = JSON.parse(localStorage.getItem('app_config') || '{}');
         if (config.apiKey) setApiKey(config.apiKey);
         if (config.model) setModel(config.model);
         if (config.imageModel) setImageModel(config.imageModel);
@@ -18,7 +18,7 @@ export default function SettingsPage() {
 
     const handleSave = () => {
         const config = { apiKey, model, imageModel, videoModel };
-        localStorage.setItem('starnet_config', JSON.stringify(config));
+        localStorage.setItem('app_config', JSON.stringify(config));
         setStatus('Settings saved successfully!');
         setTimeout(() => setStatus(''), 3000);
     };

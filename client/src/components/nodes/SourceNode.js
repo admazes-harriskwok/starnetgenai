@@ -18,55 +18,69 @@ export default memo(({ id, data, selected }) => {
         }
     };
 
-    const onDragOver = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-    };
-
-    const onDrop = (e) => {
-        e.preventDefault();
-        e.stopPropagation();
-        const file = e.dataTransfer.files?.[0];
-        if (file && data.onImageUpload) {
-            data.onImageUpload(id, file);
-        }
-    };
-
     return (
-        <div className={`node-container ${selected ? 'selected' : ''}`}>
+        <div className={`node-container media-node ${selected ? 'selected' : ''}`}>
             <NodeToolbar isVisible={selected} position={Position.Top}>
                 <div className="toolbar-wrapper">
-                    <button className="toolbar-btn" onClick={onBoxClick}>Upload</button>
+                    <button className="toolbar-btn" onClick={onBoxClick}>
+                        {data.image || data.video ? 'Replace' : 'Upload'}
+                    </button>
+                    {(data.image || data.video) && (
+                        <button className="toolbar-btn" onClick={() => data.onExpand && data.onExpand(data.image || data.video)}>
+                            ⛶ Zoom
+                        </button>
+                    )}
                     <button className="toolbar-btn delete" onClick={() => data.onDelete(id)}>🗑️ Delete</button>
                 </div>
             </NodeToolbar>
+
+            <Handle type="target" position={Position.Left} className="handle-dot" />
+
             <div className="node-header">
-                <span className="icon">📷</span>
-                Source Image
+                <span className="icon">📂</span>
+                {data.label || 'Media Asset'}
             </div>
 
-            <div
-                className="node-content"
-                onDragOver={onDragOver}
-                onDrop={onDrop}
-            >
+            <div className="node-content">
                 <input
                     type="file"
                     ref={fileInputRef}
                     style={{ display: 'none' }}
-                    accept="image/*"
+                    accept="image/*,video/*"
                     onChange={handleFileChange}
                 />
 
-                {data.image ? (
-                    <div className="image-wrapper" onClick={onBoxClick} title="Click to replace">
-                        <img src={data.image} alt="Source" className="preview-img" />
+                {data.loading ? (
+                    <div className="upload-zone loading">
+                        <div className="spinner"></div>
+                        <p>Uploading...</p>
+                    </div>
+                ) : (data.image || data.video || data.output) ? (
+                    <div className="preview-wrapper" onClick={onBoxClick}>
+                        {(data.video || (data.output && typeof data.output === 'string' && (
+                            data.output.includes('.mp4') ||
+                            data.output.includes('generativelanguage.googleapis.com') ||
+                            data.output.includes('videointelligence.googleapis.com')
+                        ))) ? (
+                            <video
+                                src={data.video || data.output}
+                                className="preview-media"
+                                autoPlay
+                                muted
+                                loop
+                                onError={(e) => {
+                                    e.target.style.display = 'none';
+                                    console.warn("Video failed to load in MediaNode");
+                                }}
+                            />
+                        ) : (
+                            <img src={data.image || data.output} alt="Media" className="preview-media" />
+                        )}
                     </div>
                 ) : (
-                    <div className="upload-placeholder" onClick={onBoxClick}>
-                        <span className="upload-icon">☁️</span>
-                        <p>Click to Upload</p>
-                        <p className="sub-text">or drag & drop</p>
+                    <div className="upload-zone" onClick={onBoxClick}>
+                        <span className="up-icon">＋</span>
+                        <p>Add Media</p>
                     </div>
                 )}
             </div>
@@ -74,115 +88,108 @@ export default memo(({ id, data, selected }) => {
             <Handle type="source" position={Position.Right} className="handle-dot" />
 
             <style jsx>{`
-        .node-container {
-            background: white;
-            border-radius: 12px;
-            width: 240px;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1);
-            border: 2px solid transparent;
-            transition: all 0.2s;
-            overflow: hidden;
-        }
-
-        .node-container.selected {
-            border-color: #ff6b3d;
-            box-shadow: 0 0 0 4px rgba(255, 107, 61, 0.2);
-        }
-
-        .node-header {
-            background: #f8f9fa;
-            padding: 10px 16px;
-            border-bottom: 1px solid #eee;
-            font-size: 0.9rem;
-            font-weight: 600;
-            color: #444;
-            display: flex;
-            align-items: center;
-            gap: 8px;
-        }
-
-        .node-content {
-            padding: 16px;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 160px;
-            background: #fff;
-        }
-
-        .image-wrapper {
-            width: 100%;
-            cursor: pointer;
-        }
-
-        .preview-img {
-            width: 100%;
-            height: 140px;
-            object-fit: cover;
-            border-radius: 8px;
-            transition: opacity 0.2s;
-        }
-        
-        .image-wrapper:hover .preview-img {
-            opacity: 0.8;
-        }
-
-        .upload-placeholder {
-            border: 2px dashed #ddd;
-            border-radius: 8px;
-            width: 100%;
-            height: 140px;
-            display: flex;
-            flex-direction: column;
-            justify-content: center;
-            align-items: center;
-            color: #888;
-            cursor: pointer;
-            transition: border-color 0.2s;
-        }
-
-        .upload-placeholder:hover {
-            border-color: #ff6b3d;
-            background: #fffaf5;
-        }
-
-        .upload-icon { font-size: 1.5rem; margin-bottom: 4px; }
-        .sub-text { font-size: 0.7rem; opacity: 0.7; }
-
-        :global(.handle-dot) {
-            background: #ff6b3d !important;
-            width: 12px !important;
-            height: 12px !important;
-            border: 2px solid white !important;
-        }
-
-        .toolbar-wrapper {
-            display: flex;
-            gap: 4px;
-            background: #0f172a;
-            padding: 4px;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
-            margin-bottom: 8px;
-        }
-        .toolbar-btn {
-            background: transparent;
-            border: none;
-            color: white;
-            font-size: 0.7rem;
-            font-weight: 600;
-            padding: 4px 8px;
-            border-radius: 4px;
-            cursor: pointer;
-        }
-        .toolbar-btn:hover {
-            background: rgba(255,255,255,0.1);
-        }
-        .toolbar-btn.delete:hover {
-            background: #ef4444;
-            color: white;
-        }
-      `}</style>
+                .node-container {
+                    background: white;
+                    border-radius: 14px;
+                    width: 200px;
+                    box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+                    border: 2px solid transparent;
+                    transition: all 0.3s;
+                    overflow: hidden;
+                }
+                .node-container.selected {
+                    border-color: #f97316;
+                    transform: scale(1.02);
+                }
+                .node-header {
+                    background: #fff7ed;
+                    padding: 8px 12px;
+                    font-size: 0.75rem;
+                    font-weight: 700;
+                    color: #f97316;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                    text-transform: uppercase;
+                    letter-spacing: 0.05em;
+                }
+                .node-content {
+                    padding: 12px;
+                }
+                .upload-zone {
+                    border: 2px dashed #e2e8f0;
+                    border-radius: 10px;
+                    height: 120px;
+                    display: flex;
+                    flex-direction: column;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    color: #94a3b8;
+                    transition: all 0.2s;
+                }
+                .upload-zone:hover {
+                    border-color: #f97316;
+                    background: #fffaf5;
+                    color: #f97316;
+                }
+                .preview-wrapper {
+                    border-radius: 8px;
+                    overflow: hidden;
+                    height: 120px;
+                    cursor: pointer;
+                }
+                .preview-media {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                }
+                .toolbar-wrapper {
+                    display: flex;
+                    gap: 4px;
+                    background: #0f172a;
+                    padding: 4px;
+                    border-radius: 8px;
+                    box-shadow: 0 4px 6px -1px rgba(0,0,0,0.1);
+                    margin-bottom: 8px;
+                }
+                .toolbar-btn {
+                    background: transparent;
+                    border: none;
+                    color: white;
+                    font-size: 0.7rem;
+                    font-weight: 600;
+                    padding: 4px 8px;
+                    border-radius: 4px;
+                    cursor: pointer;
+                }
+                .toolbar-btn:hover {
+                    background: rgba(255,255,255,0.1);
+                }
+                .toolbar-btn.delete:hover {
+                    background: #ef4444;
+                    color: white;
+                }
+                .spinner {
+                    width: 24px;
+                    height: 24px;
+                    border: 3px solid #f9731633;
+                    border-top: 3px solid #f97316;
+                    border-radius: 50%;
+                    animation: spin 1s linear infinite;
+                    margin-bottom: 8px;
+                }
+                @keyframes spin {
+                    from { transform: rotate(0deg); }
+                    to { transform: rotate(360deg); }
+                }
+                :global(.handle-dot) {
+                    width: 10px !important;
+                    height: 10px !important;
+                    background: #f97316 !important;
+                    border: 2px solid white !important;
+                }
+            `}</style>
         </div>
     );
 });

@@ -178,16 +178,34 @@ export default function DashboardPage() {
                     <h2 className="section-title">My Projects</h2>
                     <div className="templates-grid">
                         {projects.map(project => (
-                            <div key={project.id} className="template-card" onClick={() => handleResumeProject(project.id)}>
-                                <div className="thumbnail-wrapper">
+                            <div key={project.id} className="template-card">
+                                <div className="thumbnail-wrapper" onClick={() => handleResumeProject(project.id)}>
                                     {renderThumbnail(project)}
                                     <div className="overlay">
                                         <button className="use-btn">Resume</button>
                                     </div>
                                 </div>
                                 <div className="card-footer">
-                                    <h3>{project.name}</h3>
-                                    <span className="last-modified">{new Date(project.updatedAt).toLocaleDateString()}</span>
+                                    <div className="card-info">
+                                        <h3>{project.name}</h3>
+                                        <span className="last-modified">{new Date(project.updatedAt).toLocaleDateString()}</span>
+                                    </div>
+                                    <button
+                                        className="rename-btn"
+                                        title="Rename Project"
+                                        onClick={async (e) => {
+                                            e.stopPropagation();
+                                            const newName = window.prompt("Enter new project name:", project.name);
+                                            if (newName && newName !== project.name) {
+                                                const updated = { ...project, name: newName, updatedAt: new Date().toISOString() };
+                                                const { saveProjectToDB } = require('../../lib/db');
+                                                await saveProjectToDB(updated);
+                                                setProjects(prev => prev.map(p => p.id === project.id ? updated : p));
+                                            }
+                                        }}
+                                    >
+                                        ✏️
+                                    </button>
                                 </div>
                             </div>
                         ))}
@@ -233,6 +251,7 @@ export default function DashboardPage() {
                 .page-container {
                     max-width: 1400px; /* Wider for modern feel */
                     margin: 0 auto;
+                    padding-top: 0;
                     padding-bottom: 60px;
                 }
 
@@ -241,7 +260,32 @@ export default function DashboardPage() {
                     display: flex;
                     justify-content: space-between;
                     align-items: flex-end;
-                    margin-bottom: 40px;
+                    margin-bottom: 24px;
+                    padding-top: 20px;
+                }
+                
+                .rename-btn {
+                    background: #f1f5f9;
+                    border: none;
+                    border-radius: 8px;
+                    width: 32px;
+                    height: 32px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                    font-size: 14px;
+                }
+                
+                .rename-btn:hover {
+                    background: #e2e8f0;
+                    transform: scale(1.1);
+                }
+                
+                .card-info {
+                    display: flex;
+                    flex-direction: column;
                 }
 
                 h1 { 

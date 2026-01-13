@@ -8,9 +8,9 @@ export const TEMPLATES = {
         nodes: [
             {
                 id: '1',
-                type: 'source',
+                type: 'sourceUpload',
                 position: { x: 100, y: 200 },
-                data: { label: 'Source Product', description: 'Product asset', image: 'https://picsum.photos/seed/bottle/300/300' }
+                data: { label: 'Source Product', description: 'Product asset', image: null }
             },
             {
                 id: 'text-1',
@@ -90,7 +90,7 @@ export const TEMPLATES = {
                 id: 'cp-source-1',
                 type: 'sourceUpload',
                 position: { x: 50, y: 50 },
-                data: { label: '1. Upload Product Info', image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400' }
+                data: { label: '1. Upload Product Info', image: null }
             },
             {
                 id: 'cp-product-info',
@@ -119,7 +119,7 @@ export const TEMPLATES = {
                 type: 'aiAnalysis',
                 position: { x: 450, y: 300 },
                 data: {
-                    label: 'Poster Concepts Generation',
+                    label: 'Inspire',
                     prompt: `Objective: We need to create a [Christmas Promotion Poster] for this product. The poster must align with the theme of the best-selling discount promotion, showcase the necessary discount information, and convey a sense of sophistication.
 
 Task: Carefully study the provided product information, stay tightly focused on the promotional theme, and incorporate the user’s custom preferences. Output three different poster concepts, each beginning with a label such as “Poster 1,” “Poster 2,” etc. Each concept should adopt a distinctly different style—for example, with or without a model, product perspective, color tone, artistic style, degree of creative exaggeration, visual impact, amount of text (but text is required), composition method, information hierarchy, and so on. Apart from the product itself, the posters should avoid similarity as much as possible.
@@ -206,7 +206,7 @@ Your concepts must not compromise the consistency of the product’s features. F
         category: 'Generate Video',
         ratio: '9:16',
         nodes: [
-            { id: 'sh-1', type: 'sourceUpload', position: { x: 50, y: 300 }, data: { label: 'Source Image', image: 'https://images.unsplash.com/photo-1596462502278-27bfaf41039b?w=400' } },
+            { id: 'sh-1', type: 'sourceUpload', position: { x: 50, y: 300 }, data: { label: 'Source Image', image: null } },
             { id: 'sh-shot-1', type: 'aiImage', position: { x: 450, y: 50 }, data: { label: 'Shot 1', prompt: 'Ultra-realistic close-up of an elegant hand holding a skincare bottle against a soft, clean aesthetic background. Natural soft lighting, 8k resolution.', output: null } },
             {
                 id: 'sh-clip-1',
@@ -256,14 +256,14 @@ Your concepts must not compromise the consistency of the product’s features. F
             { id: 'e-s3-c3', source: 'sh-shot-3', target: 'sh-clip-3', animated: true }
         ]
     },
-    'vertical-ad-suite': {
-        id: 'vertical-ad-suite',
-        name: 'Vertical Ad Suite',
+    'resize-ad-banners': {
+        id: 'resize-ad-banners',
+        name: 'Resize Ad Banners',
         category: 'Edit Image',
-        ratio: 'IAB Vertical',
+        ratio: 'Multi-Format',
         nodes: [
-            { id: 'v1', type: 'sourceUpload', position: { x: 50, y: 200 }, data: { label: 'Master Creative', image: 'https://images.unsplash.com/photo-1542291026-7eec264c27ff?w=400' } },
-            { id: 'v2', type: 'verticalSuite', position: { x: 450, y: 150 }, data: { label: 'Adaptive Vertical Suite', outputs: {} } }
+            { id: 'v1', type: 'sourceUpload', position: { x: 50, y: 200 }, data: { label: 'Master Creative', image: null } },
+            { id: 'v2', type: 'adAdapter', position: { x: 450, y: 150 }, data: { label: 'Programmatic Ad Suite', outputs: {} } }
         ],
         edges: [
             { id: 'e-v1-v2', source: 'v1', target: 'v2', animated: true }
@@ -283,7 +283,7 @@ Your concepts must not compromise the consistency of the product’s features. F
             },
             {
                 id: 'ec-image-1',
-                type: 'media',
+                type: 'sourceUpload',
                 position: { x: 50, y: 350 },
                 data: { label: 'MEDIA', image: null }
             },
@@ -294,7 +294,7 @@ Your concepts must not compromise the consistency of the product’s features. F
                 data: {
                     label: 'Director Analysis',
                     prompt: `# Role
-You are an expert AI Video Director. Your goal is to analyze the provided [Product Image] and [Spoken Copy] to generate a structured 5-shot video storyboard JSON.
+You are an expert AI Video Director. Your goal is to analyze the provided [Product Image] and [Spoken Copy] to generate a structured 5-shot video storyboard JSON. 
 
 # Inputs
 - Product Image: (The image attached to this node)
@@ -354,6 +354,105 @@ Lighting: {{Director Analysis.shots[0].lighting}}`
             { id: 'e-image-1-analysis', source: 'ec-image-1', target: 'ec-analysis-1', animated: true },
             { id: 'e-analysis-1-video', source: 'ec-analysis-1', target: 'ec-video-1', animated: true },
             { id: 'e-image-1-video', source: 'ec-image-1', target: 'ec-video-1', animated: true }
+        ]
+    },
+    'qa-testing-matrix': {
+        id: 'qa-testing-matrix',
+        name: 'QA Testing Matrix',
+        category: 'Development',
+        ratio: 'Multi-Format',
+        nodes: [
+            // Core Inputs
+            { id: 'qa-t1', type: 'inputText', position: { x: 50, y: 50 }, data: { label: 'Input Text', text: 'Write a 50-word marketing tagline for these professional studio headphones.' } },
+            { id: 'qa-i1', type: 'sourceUpload', position: { x: 50, y: 300 }, data: { label: 'Input Image', image: null } },
+            { id: 'qa-v1', type: 'sourceUpload', position: { x: 50, y: 550 }, data: { label: 'Input Video', video: null } },
+
+            // 1. Text -> Text
+            { id: 'qa-path-1', type: 'text', position: { x: 450, y: 0 }, data: { label: 'T -> T', prompt: 'Summarize the input text into 3 bullet points.' } },
+
+            // 2. Text + Image -> Text
+            { id: 'qa-path-2', type: 'text', position: { x: 450, y: 150 }, data: { label: 'T+I -> T', prompt: 'Based on the image and text, suggest a matching headline.' } },
+
+            // 3. Text -> Image
+            { id: 'qa-path-3', type: 'aiImage', position: { x: 450, y: 300 }, data: { label: 'T -> I', prompt: 'A cinematic high-end store interior for the product mentioned.' } },
+
+            // 4. Text + Image -> Image
+            { id: 'qa-path-4', type: 'aiImage', position: { x: 450, y: 450 }, data: { label: 'T+I -> I', prompt: 'Place the product from input into a beach sunset setting.' } },
+
+            // 5. Text -> Video
+            { id: 'qa-path-5', type: 'aiVideo', position: { x: 450, y: 600 }, data: { label: 'T -> V', prompt: 'Slow elegant camera zoom into the leather texture of the headphones.' } },
+
+            // 6. Text + Image -> Video
+            { id: 'qa-path-6', type: 'aiVideo', position: { x: 450, y: 750 }, data: { label: 'T+I -> V', prompt: 'Animate subtle light reflections across the earcups of the headphones.' } },
+
+            // 7. Text + Video -> Text (Assistant for conversation)
+            { id: 'qa-path-7', type: 'assistant', position: { x: 850, y: 0 }, data: { label: 'T+V -> T', prompt: 'What happens in this video?' } },
+
+            // 8. Image + Video -> Text
+            { id: 'qa-path-8', type: 'aiAnalysis', position: { x: 850, y: 150 }, data: { label: 'I+V -> T', prompt: 'Analyze the common theme between the image and video.' } },
+
+            // 9. Text + Image + Video -> Text
+            { id: 'qa-path-9', type: 'aiAnalysis', position: { x: 850, y: 300 }, data: { label: 'T+I+V -> T', prompt: 'Combine these inputs into a 5-shot script.' } },
+
+            // 10. Image -> Text
+            { id: 'qa-path-10', type: 'aiAnalysis', position: { x: 850, y: 450 }, data: { label: 'I -> T', prompt: '' } },
+
+            // 11. Video -> Text
+            { id: 'qa-path-11', type: 'aiAnalysis', position: { x: 850, y: 600 }, data: { label: 'V -> T', prompt: '' } },
+
+            // 12. Image -> Multiple Images (Ad Adapter)
+            { id: 'qa-path-12', type: 'adAdapter', position: { x: 850, y: 750 }, data: { label: 'I -> Mult-I', outputs: [] } },
+
+            // 13. Analysis (JSON) + Image -> Image (Storyboard)
+            { id: 'qa-path-13', type: 'imageGen', position: { x: 1250, y: 100 }, data: { label: 'An(JSON)+I -> I', output: null } },
+
+            // 14. Multiple Images (Storyboard) + Text -> Video
+            { id: 'qa-path-14', type: 'videoGen', position: { x: 1250, y: 350 }, data: { label: 'Mult-I+T -> V', clips: [] } },
+
+            // 15. Layout (JSON) + Image -> Image (Smart Resize)
+            { id: 'qa-path-15', type: 'smartResize', position: { x: 1250, y: 600 }, data: { label: 'Layout(JSON)+I -> I', previews: {} } }
+        ],
+        edges: [
+            // 1. Text -> Text
+            { id: 'e-1', source: 'qa-t1', target: 'qa-path-1', animated: true },
+            // 2. Text + Image -> Text
+            { id: 'e-2a', source: 'qa-t1', target: 'qa-path-2', animated: true },
+            { id: 'e-2b', source: 'qa-i1', target: 'qa-path-2', animated: true },
+            // 3. Text -> Image
+            { id: 'e-3', source: 'qa-t1', target: 'qa-path-3', animated: true },
+            // 4. Text + Image -> Image
+            { id: 'e-4a', source: 'qa-t1', target: 'qa-path-4', animated: true },
+            { id: 'e-4b', source: 'qa-i1', target: 'qa-path-4', animated: true },
+            // 5. Text -> Video
+            { id: 'e-5', source: 'qa-t1', target: 'qa-path-5', animated: true },
+            // 6. Text + Image -> Video
+            { id: 'e-6a', source: 'qa-t1', target: 'qa-path-6', animated: true },
+            { id: 'e-6b', source: 'qa-i1', target: 'qa-path-6', animated: true },
+            // 7. Text + Video -> Text
+            { id: 'e-7a', source: 'qa-t1', target: 'qa-path-7', animated: true },
+            { id: 'e-7b', source: 'qa-v1', target: 'qa-path-7', animated: true },
+            // 8. Image + Video -> Text
+            { id: 'e-8a', source: 'qa-i1', target: 'qa-path-8', animated: true },
+            { id: 'e-8b', source: 'qa-v1', target: 'qa-path-8', animated: true },
+            // 9. Text + Image + Video -> Text
+            { id: 'e-9a', source: 'qa-t1', target: 'qa-path-9', animated: true },
+            { id: 'e-9b', source: 'qa-i1', target: 'qa-path-9', animated: true },
+            { id: 'e-9c', source: 'qa-v1', target: 'qa-path-9', animated: true },
+            // 10. Image -> Text
+            { id: 'e-10', source: 'qa-i1', target: 'qa-path-10', animated: true },
+            // 11. Video -> Text
+            { id: 'e-11', source: 'qa-v1', target: 'qa-path-11', animated: true },
+            // 12. Image -> Multiple Images
+            { id: 'e-12', source: 'qa-i1', target: 'qa-path-12', animated: true },
+            // 13. Analysis + Image -> Image
+            { id: 'e-13a', source: 'qa-path-10', target: 'qa-path-13', animated: true },
+            { id: 'e-13b', source: 'qa-i1', target: 'qa-path-13', animated: true },
+            // 14. Multiple Images + Text -> Video
+            { id: 'e-14a', source: 'qa-path-13', target: 'qa-path-14', animated: true },
+            { id: 'e-14b', source: 'qa-t1', target: 'qa-path-14', animated: true },
+            // 15. Layout + Image -> Image
+            { id: 'e-15a', source: 'qa-path-12', target: 'qa-path-15', animated: true }, // Logic: Use adAdapter layouts
+            { id: 'e-15b', source: 'qa-i1', target: 'qa-path-15', animated: true }
         ]
     }
 };

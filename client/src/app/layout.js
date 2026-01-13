@@ -3,8 +3,8 @@ import Sidebar from '@/components/Sidebar';
 import Header from '@/components/Header';
 
 export const metadata = {
-  title: 'Starnet.ai',
-  description: 'Influencer Marketing Platform',
+  title: 'Campaign Manager',
+  description: 'AI-Powered Creative Campaign Management',
 };
 
 export default function RootLayout({ children }) {
@@ -18,12 +18,9 @@ export default function RootLayout({ children }) {
       <body>
         <div className="main-layout">
           <Sidebar />
-          <div style={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-            <Header />
-            <main className="main-content">
-              {children}
-            </main>
-          </div>
+          <main className="main-content">
+            {children}
+          </main>
         </div>
       </body>
     </html>

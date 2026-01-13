@@ -82,6 +82,15 @@ export default memo(({ id, data, selected }) => {
                             <span className="chevron">⌄</span>
                         </div>
                         <div className="actions-right">
+                            <select
+                                className="ratio-select"
+                                value={data.aspectRatio || '1:1'}
+                                onChange={(e) => data.onDataChange(id, { aspectRatio: e.target.value })}
+                            >
+                                {['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'].map(r => (
+                                    <option key={r} value={r}>{r}</option>
+                                ))}
+                            </select>
                             <div className="credit-cost">
                                 <span className="coin">🪙</span>
                                 10
@@ -106,6 +115,20 @@ export default memo(({ id, data, selected }) => {
             <Handle type="source" position={Position.Right} className="handle-dot" />
 
             <style jsx>{`
+                .ratio-select {
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    color: #64748b;
+                    padding: 2px 4px;
+                    border-radius: 6px;
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    cursor: pointer;
+                    outline: none;
+                }
+                .ratio-select:hover {
+                    border-color: #ff3d71;
+                }
                 .node-container {
                     background: white;
                     border-radius: 20px;

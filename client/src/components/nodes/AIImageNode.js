@@ -49,7 +49,16 @@ export default memo(({ id, data, selected }) => {
                         <button className="tool-btn-square mag">
                             <span className="wand">🪄</span>
                         </button>
-                        {data.refImage && (
+                        {data.refImages && data.refImages.length > 0 ? (
+                            <div className="ref-images-container">
+                                {data.refImages.map((img, idx) => (
+                                    <div key={idx} className="ref-image-mini">
+                                        <img src={img} alt={`ref-${idx + 1}`} />
+                                        <span className="badge">{idx + 1}</span>
+                                    </div>
+                                ))}
+                            </div>
+                        ) : data.refImage && (
                             <div className="ref-image-mini">
                                 <img src={data.refImage} alt="ref" />
                                 <span className="badge">1</span>
@@ -72,18 +81,15 @@ export default memo(({ id, data, selected }) => {
                             <span className="chevron">⌄</span>
                         </div>
                         <div className="actions-right">
-                            <div
-                                className="ratio-badge clickable"
-                                onClick={() => {
-                                    const ratios = ['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'];
-                                    const current = data.aspectRatio || '1:1';
-                                    const nextIdx = (ratios.indexOf(current) + 1) % ratios.length;
-                                    data.onDataChange(id, { aspectRatio: ratios[nextIdx] });
-                                }}
+                            <select
+                                className="ratio-select"
+                                value={data.aspectRatio || '1:1'}
+                                onChange={(e) => data.onDataChange(id, { aspectRatio: e.target.value })}
                             >
-                                {data.aspectRatio || '1:1'}
-                            </div>
-                            <button className="cam-btn">📷 Camera Control</button>
+                                {['1:1', '3:2', '2:3', '3:4', '4:3', '4:5', '5:4', '9:16', '16:9', '21:9'].map(r => (
+                                    <option key={r} value={r}>{r}</option>
+                                ))}
+                            </select>
                             <span className="ratio-text">1x</span>
                             <div className="credit-cost">
                                 <span className="coin">🪙</span>
@@ -102,10 +108,24 @@ export default memo(({ id, data, selected }) => {
             <Handle type="source" position={Position.Right} className="handle-dot" />
 
             <style jsx>{`
+                .ratio-select {
+                    background: white;
+                    border: 1px solid #e2e8f0;
+                    color: #64748b;
+                    padding: 2px 4px;
+                    border-radius: 6px;
+                    font-size: 0.7rem;
+                    font-weight: 700;
+                    cursor: pointer;
+                    outline: none;
+                }
+                .ratio-select:hover {
+                    border-color: #f97316;
+                }
                 .node-container {
                     background: white;
                     border-radius: 20px;
-                    width: 320px;
+                    width: 480px;
                     box-shadow: 0 10px 30px rgba(0, 0, 0, 0.08);
                     border: 2px solid transparent;
                     transition: all 0.3s;
@@ -213,6 +233,15 @@ export default memo(({ id, data, selected }) => {
                 .tool-btn-square .plus { font-size: 1rem; margin-bottom: -2px; }
                 .tool-btn-square .wand { font-size: 1.1rem; }
 
+                .ref-images-container {
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    margin-left: auto;
+                    justify-content: flex-end;
+                    max-width: 140px;
+                }
+
                 .ref-image-mini {
                     position: relative;
                     width: 38px;
@@ -285,7 +314,7 @@ export default memo(({ id, data, selected }) => {
                 .actions-right {
                     display: flex;
                     align-items: center;
-                    gap: 10px;
+                    gap: 8px;
                 }
                 .ratio-badge {
                     background: white;
@@ -366,6 +395,6 @@ export default memo(({ id, data, selected }) => {
                     border: 2px solid white !important;
                 }
             `}</style>
-        </div>
+        </div >
     );
 });

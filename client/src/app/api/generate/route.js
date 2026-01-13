@@ -19,7 +19,7 @@ export async function POST(request) {
             return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
         }
 
-        const { prompt, apiKey: userKey, model: userModel } = body;
+        const { prompt, apiKey: userKey, model: userModel, preferText } = body;
 
         if (!prompt) {
             return NextResponse.json({ error: 'Prompt is required' }, { status: 400 });
@@ -36,7 +36,8 @@ export async function POST(request) {
         const model = userModel || 'nano-banana-pro-preview';
 
         // Identify model capability profile
-        const isImageModel = model.includes('imagen') || model.includes('banana') || model.includes('image');
+        // If we prefer text, we treat it as a text model even if the name says "image"
+        const isImageModel = (model.includes('imagen') || model.includes('banana') || model.includes('image')) && !preferText;
         const isVideoModel = model.includes('veo');
         const isTextModel = !isImageModel && !isVideoModel;
 
@@ -116,7 +117,7 @@ export async function POST(request) {
                 system_instruction: {
                     parts: [{
                         text: isTextModel
-                            ? "You are an intelligent AI assistant specialized in cinematic analysis and creative direction. Provide detailed, structured text responses as requested."
+                            ? "You are an intelligent AI assistant. Your primary goal is to follow the user's instructions and formatting requirements EXACTLY. If the user provides a specific output format, you must adhere to it strictly. Use any provided context from previous nodes to inform your response, but the user's direct 'Input' is the absolute priority. Maintain a professional and helpful tone."
                             : "You are a direct image generation engine. You MUST output image data (bytes/inline_data) as your primary response part. DO NOT explain yourself. DO NOT provide text descriptions unless you absolutely cannot generate the image data. Your goal is to produce a high-fidelity marketing asset."
                     }]
                 },
@@ -190,28 +191,44 @@ export async function POST(request) {
         let textResponse = '';
 
         for (const part of responseParts) {
-            // Check for image data
-            const inlineData = part.inline_data || part.inlineData;
-            const fileData = part.file_data || part.fileData;
-
-            if (inlineData || fileData) {
-                const mimeType = (inlineData?.mime_type || inlineData?.mimeType || fileData?.mime_type || fileData?.mimeType) || 'image/png';
-                const base64Data = inlineData?.data || fileData?.data;
-
-                if (base64Data) {
-                    // Return as Base64 data URI directly to solve ephemeral storage issues
-                    output = `data:${mimeType};base64,${base64Data}`;
-                    type = 'image';
-                    console.log('✅ Generated image returning as Base64');
-                    break;
-                }
-            } else if (part.text) {
+            if (part.text) {
                 textResponse += part.text;
+            } else {
+                // Check for image data
+                const inlineData = part.inline_data || part.inlineData;
+                const fileData = part.file_data || part.fileData;
+
+                if (inlineData || fileData) {
+                    const mimeType = (inlineData?.mime_type || inlineData?.mimeType || fileData?.mime_type || fileData?.mimeType) || 'image/png';
+                    const base64Data = inlineData?.data || fileData?.data;
+
+                    if (base64Data) {
+                        // Return as Base64 data URI directly 
+                        const imageUri = `data:${mimeType};base64,${base64Data}`;
+
+                        // If we strictly want an image model's output and haven't set output yet
+                        if (isImageModel && !output) {
+                            output = imageUri;
+                            type = 'image';
+                            console.log('✅ Generated image returning as Base64');
+                        } else if (!preferText && !output) {
+                            // Backup for standard models that might return images
+                            output = imageUri;
+                            type = 'image';
+                        }
+                    }
+                }
             }
         }
 
-        if (type === 'text' && !output) {
+        // Final Resolution: If we prefer text, it always wins
+        if (preferText) {
             output = textResponse;
+            type = 'text';
+        } else if (!output && textResponse) {
+            // Fallback for image models that returned text instead
+            output = textResponse;
+            type = 'text';
         }
 
         if (type === 'text') {

@@ -4,22 +4,21 @@ import { Handle, Position } from 'reactflow';
 import { getDisplayName } from '../../lib/models';
 
 const IAB_DIMENSIONS = [
-    { w: 300, h: 250, label: "Medium Rectangle" },
-    { w: 728, h: 90, label: "Leaderboard" },
-    { w: 160, h: 600, label: "Wide Skyscraper" },
-    { w: 320, h: 50, label: "Mobile Banner" },
-    { w: 970, h: 250, label: "Billboard" },
-    { w: 300, h: 1050, label: "Portrait" },
-    { w: 336, h: 280, label: "Large Rectangle" },
-    { w: 300, h: 600, label: "Half-Page Ad" },
-    { w: 970, h: 90, label: "Large Leaderboard" },
-    { w: 468, h: 60, label: "Banner" },
-    { w: 250, h: 250, label: "Square" },
-    { w: 120, h: 600, label: "Skyscraper" },
-    { w: 300, h: 50, label: "Mobile Leaderboard" },
-    { w: 300, h: 100, label: "Mobile Large Banner" },
-    { w: 320, h: 100, label: "Mobile Large Banner" },
-    { w: 200, h: 200, label: "Small Square" }
+    // Rectangles
+    { category: "Rectangles (Standard Content Units)", w: 300, h: 250, label: "Medium Rectangle" },
+    { category: "Rectangles (Standard Content Units)", w: 336, h: 280, label: "Large Rectangle" },
+    // Tall
+    { category: "Tall Vertical Units (Skyscrapers)", w: 300, h: 600, label: "Half-Page Ad" },
+    { category: "Tall Vertical Units (Skyscrapers)", w: 160, h: 600, label: "Wide Skyscraper" },
+    { category: "Tall Vertical Units (Skyscrapers)", w: 300, h: 1050, label: "Portrait" },
+    // Horizontal
+    { category: "Horizontal & Panoramic Units", w: 970, h: 250, label: "Billboard" },
+    // Squares
+    { category: "Squares", w: 250, h: 250, label: "Square" },
+    { category: "Squares", w: 200, h: 200, label: "Small Square" },
+    // Mobile
+    { category: "Mobile Specific Units", w: 300, h: 100, label: "Mobile Banner" },
+    { category: "Mobile Specific Units", w: 320, h: 100, label: "Mobile Banner (L)" }
 ];
 
 const AdAdapterNode = ({ id, data }) => {
@@ -36,7 +35,7 @@ const AdAdapterNode = ({ id, data }) => {
                         <span className="node-icon">📐</span>
                         <div className="title-group">
                             <span className="node-title">IAB Ad Adapter</span>
-                            <span className="node-subtitle">16 Programmatic Variants</span>
+                            <span className="node-subtitle">10 Programmatic Variants</span>
                         </div>
                     </div>
                     {isLoading && <div className="spinner-small"></div>}
@@ -44,23 +43,38 @@ const AdAdapterNode = ({ id, data }) => {
 
                 <div className="node-body">
                     {outputs.length > 0 ? (
-                        <div className="variants-grid">
-                            {IAB_DIMENSIONS.map((dim, idx) => (
-                                <div key={idx} className="variant-item">
-                                    <div className="variant-preview" title={`${dim.label} (${dim.w}x${dim.h})`}>
-                                        {outputs[idx] ? (
-                                            <img src={outputs[idx]} alt={dim.label} onClick={() => data.onExpand(outputs[idx])} />
-                                        ) : (
-                                            <div className="ghost-box">
-                                                <span>{dim.w}x{dim.h}</span>
+
+                        <div className="variants-container">
+                            {Object.entries(
+                                IAB_DIMENSIONS.reduce((acc, dim, idx) => {
+                                    if (!acc[dim.category]) acc[dim.category] = [];
+                                    acc[dim.category].push({ ...dim, originalIdx: idx });
+                                    return acc;
+                                }, {})
+                            ).map(([category, items]) => (
+                                <div key={category} className="category-group">
+                                    <h4 className="category-title">{category}</h4>
+                                    <div className="variants-grid">
+                                        {items.map((dim) => (
+                                            <div key={dim.originalIdx} className="variant-item">
+                                                <div className="variant-preview" title={`${dim.label} (${dim.w}x${dim.h})`}>
+                                                    {outputs[dim.originalIdx] ? (
+                                                        <img src={outputs[dim.originalIdx]} alt={dim.label} onClick={() => data.onExpand(outputs[dim.originalIdx])} />
+                                                    ) : (
+                                                        <div className="ghost-box">
+                                                            <span>{dim.w}x{dim.h}</span>
+                                                        </div>
+                                                    )}
+                                                </div>
+                                                <span className="variant-dim">{dim.w}x{dim.h}</span>
                                             </div>
-                                        )}
+                                        ))}
                                     </div>
-                                    <span className="variant-dim">{dim.w}x{dim.h}</span>
                                 </div>
                             ))}
                         </div>
                     ) : (
+
                         <div className="empty-state">
                             <div className="empty-icon">📏</div>
                             <p>Connect a Master Asset to generate 16 IAB variants</p>
@@ -87,7 +101,7 @@ const AdAdapterNode = ({ id, data }) => {
 
                 <Handle type="target" position={Position.Left} className="handle-dot" />
                 <Handle type="source" position={Position.Right} className="handle-dot" />
-            </div>
+            </div >
 
             <style jsx>{`
                 .node-wrapper { padding: 10px; }
@@ -121,6 +135,23 @@ const AdAdapterNode = ({ id, data }) => {
                     padding: 16px;
                     background: #f8fafc;
                     min-height: 200px;
+                }
+
+                .category-group {
+                    margin-bottom: 24px;
+                }
+                .category-group:last-child {
+                    margin-bottom: 0;
+                }
+                .category-title {
+                    font-size: 0.75rem;
+                    font-weight: 700;
+                    color: #94a3b8;
+                    text-transform: uppercase;
+                    margin: 0 0 12px 4px;
+                    letter-spacing: 0.05em;
+                    border-bottom: 1px dashed #e2e8f0;
+                    padding-bottom: 8px;
                 }
 
                 .variants-grid {
@@ -241,7 +272,7 @@ const AdAdapterNode = ({ id, data }) => {
                 }
                 @keyframes spin { to { transform: rotate(360deg); } }
             `}</style>
-        </div>
+        </div >
     );
 };
 

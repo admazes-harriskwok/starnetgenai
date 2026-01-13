@@ -189,16 +189,34 @@ export default function CampaignsPage() {
                     )}
                     <div className="overlay">
                       <span className="open-label">Open Canvas</span>
-                      <button
-                        className="delete-project-btn"
-                        onClick={(e) => {
-                          e.stopPropagation();
-                          handleDeleteProject(project.id);
-                        }}
-                        title="Delete Project"
-                      >
-                        🗑️
-                      </button>
+                      <div className="project-actions">
+                        <button
+                          className="ren-btn"
+                          title="Rename"
+                          onClick={async (e) => {
+                            e.stopPropagation();
+                            const newName = window.prompt("Enter new project name:", project.name);
+                            if (newName && newName !== project.name) {
+                              const { saveProjectToDB } = require('../../lib/db');
+                              const updated = { ...project, name: newName, updatedAt: new Date().toISOString() };
+                              await saveProjectToDB(updated);
+                              setProjects(prev => prev.map(p => p.id === project.id ? updated : p));
+                            }
+                          }}
+                        >
+                          ✏️
+                        </button>
+                        <button
+                          className="delete-project-btn"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteProject(project.id);
+                          }}
+                          title="Delete Project"
+                        >
+                          🗑️
+                        </button>
+                      </div>
                     </div>
                   </div>
                   <div className="project-info">
@@ -220,7 +238,7 @@ export default function CampaignsPage() {
         .campaigns-page {
           min-height: 100vh;
           background: #f8fafc;
-          padding: 40px;
+          padding: 0 40px 40px 40px;
         }
 
         .content-wrapper {

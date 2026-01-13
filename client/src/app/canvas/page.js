@@ -18,7 +18,9 @@ import html2canvas from 'html2canvas';
 import { TEMPLATES } from '../../config/templates';
 
 import MediaNode from '../../components/nodes/MediaNode';
+import SourceNode from '../../components/nodes/SourceNode';
 import TextNode from '../../components/nodes/TextNode';
+import InputTextNode from '../../components/nodes/InputTextNode';
 import AIImageNode from '../../components/nodes/AIImageNode';
 import AIVideoNode from '../../components/nodes/AIVideoNode';
 import AssistantNode from '../../components/nodes/AssistantNode';
@@ -32,10 +34,15 @@ import AdAdapterNode from '../../components/nodes/AdAdapterNode';
 import VerticalAdSuiteNode from '../../components/nodes/VerticalAdSuiteNode';
 import ExportHandlerNode from '../../components/nodes/cinematic/ExportHandlerNode';
 import InstructionNode from '../../components/nodes/InstructionNode';
+import SmartResizeNode from '../../components/nodes/SmartResizeNode';
+import SizeSelectionModal from '../../components/SizeSelectionModal';
+import CampaignDashboard from '../../components/CampaignDashboard';
+import CanvasEditor from '../../components/CanvasEditor';
+import AnchorWorkflowModal from '../../components/AnchorWorkflowModal';
 
 const nodeTypes = {
-    source: MediaNode,
-    sourceUpload: MediaNode,
+    source: SourceNode,
+    sourceUpload: SourceNode,
     generation: AIImageNode,
     media: MediaNode,
     text: TextNode,
@@ -50,6 +57,8 @@ const nodeTypes = {
     verticalSuite: VerticalAdSuiteNode,
     exportHandler: ExportHandlerNode,
     instruction: InstructionNode,
+    smartResize: SmartResizeNode,
+    inputText: InputTextNode,
 };
 
 function CanvasInterface() {
@@ -57,6 +66,13 @@ function CanvasInterface() {
     const router = useRouter();
     const projectId = searchParams.get('projectId');
     const [currentProjectId, setCurrentProjectId] = useState(projectId);
+
+    // Sync currentProjectId if URL param changes (e.g. after redirect/pushState)
+    useEffect(() => {
+        if (projectId && projectId !== currentProjectId) {
+            setCurrentProjectId(projectId);
+        }
+    }, [projectId]);
 
     // 1. Credit State
     const [credits, setCredits] = useState(250);
@@ -91,7 +107,7 @@ function CanvasInterface() {
             let modelToDisplay = textModel;
             if (node.type === 'aiImage' || node.type === 'imageGen' || node.type === 'adAdapter') {
                 modelToDisplay = imageModel;
-            } else if (node.type === 'videoGen') {
+            } else if (node.type === 'videoGen' || node.type === 'aiVideo') {
                 modelToDisplay = videoModel;
             }
 
@@ -126,6 +142,14 @@ function CanvasInterface() {
     const [past, setPast] = useState([]);
     const [future, setFuture] = useState([]);
 
+    // Smart Resize state
+    const [isSizeModalOpen, setIsSizeModalOpen] = useState(false);
+    const [isDashboardOpen, setIsDashboardOpen] = useState(false);
+    const [activeResizeNodeId, setActiveResizeNodeId] = useState(null);
+    const [isCanvasEditorOpen, setIsCanvasEditorOpen] = useState(false);
+    const [editorSize, setEditorSize] = useState(null);
+    const [isAnchorWorkflowOpen, setIsAnchorWorkflowOpen] = useState(false);
+
     // 3. Handlers
     const takeSnapshot = useCallback(() => {
         setPast((prev) => [...prev, {
@@ -155,6 +179,259 @@ function CanvasInterface() {
         setNodes((nds) => nds.filter((node) => node.id !== id));
         setEdges((eds) => eds.filter((edge) => edge.source !== id && edge.target !== id));
     }, [setNodes, setEdges, takeSnapshot]);
+
+    // Smart Resize handlers
+    const handleAddSize = useCallback((nodeId) => {
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        const { areAnchorsComplete } = require('../../lib/batchGenerator');
+
+        // Check if anchors are complete
+        if (!areAnchorsComplete(node?.data.anchors || [])) {
+            // Open anchor workflow instead
+            setActiveResizeNodeId(nodeId);
+            setIsAnchorWorkflowOpen(true);
+        } else {
+            // Anchors complete, open size selection
+            setActiveResizeNodeId(nodeId);
+            setIsSizeModalOpen(true);
+        }
+    }, []);
+
+    const handleSizeSelect = useCallback(async (selectedSizeIds) => {
+        if (!activeResizeNodeId) return;
+
+        const { getAllSizes } = require('../../lib/adSizes');
+        const { generateBatchLayouts, generatePreviewFromLayout } = require('../../lib/batchGenerator');
+        const allSizes = getAllSizes();
+        const rawSizes = allSizes.filter(s => selectedSizeIds.includes(s.id));
+
+        const node = nodesRef.current.find(n => n.id === activeResizeNodeId);
+
+        // Filter out duplicates to avoid key collisions
+        const existingIds = new Set((node?.data.sizes || []).map(s => s.id));
+        const selectedSizes = rawSizes.filter(s => !existingIds.has(s.id));
+
+        if (selectedSizes.length === 0) {
+            setIsSizeModalOpen(false);
+            return;
+        }
+        const masterNode = nodesRef.current.find(n =>
+            edgesRef.current.some(e => e.source === n.id && e.target === activeResizeNodeId)
+        );
+
+        // Generate layouts for new sizes using batch engine
+        const batchResults = generateBatchLayouts(
+            selectedSizes,
+            node?.data.anchors || [],
+            node?.data.layouts || {}
+        );
+
+        // Generate previews
+        for (const result of batchResults) {
+            result.preview = await generatePreviewFromLayout(
+                result.layout,
+                result.size,
+                masterNode?.data.image
+            );
+        }
+
+        setNodes(nds => nds.map(n => {
+            if (n.id === activeResizeNodeId) {
+                const newLayouts = { ...n.data.layouts };
+                batchResults.forEach(r => {
+                    newLayouts[r.sizeId] = r.layout;
+                });
+
+                return {
+                    ...n,
+                    data: {
+                        ...n.data,
+                        sizes: [...(n.data.sizes || []), ...selectedSizes],
+                        layouts: newLayouts,
+                        previews: {
+                            ...(n.data.previews || {}),
+                            ...Object.fromEntries(batchResults.map(r => [r.sizeId, r.preview]))
+                        }
+                    }
+                };
+            }
+            return n;
+        }));
+
+        setIsSizeModalOpen(false);
+    }, [activeResizeNodeId, setNodes]);
+
+    const handleAnchorSelect = useCallback((size) => {
+        if (!activeResizeNodeId) return;
+
+        setNodes(nds => nds.map(node => {
+            if (node.id === activeResizeNodeId) {
+                return {
+                    ...node,
+                    data: {
+                        ...node.data,
+                        anchors: (node.data.anchors || []).some(a => a.id === size.id)
+                            ? node.data.anchors
+                            : [...(node.data.anchors || []), size],
+                        sizes: (node.data.sizes || []).some(s => s.id === size.id)
+                            ? node.data.sizes
+                            : [...(node.data.sizes || []), size]
+                    }
+                };
+            }
+            return node;
+        }));
+
+        // Open canvas editor for this anchor
+        setEditorSize(size);
+        setIsCanvasEditorOpen(true);
+        setIsAnchorWorkflowOpen(false);
+    }, [activeResizeNodeId, setNodes]);
+
+    const handleViewDashboard = useCallback((nodeId) => {
+        setActiveResizeNodeId(nodeId);
+        setIsDashboardOpen(true);
+    }, []);
+
+    const handleCloseDashboard = useCallback(() => {
+        setIsDashboardOpen(false);
+    }, []);
+
+    const handleEditSize = useCallback((size) => {
+        setEditorSize(size);
+        setIsCanvasEditorOpen(true);
+    }, []);
+
+    const handleSaveLayout = useCallback((layoutData) => {
+        if (!activeResizeNodeId || !layoutData) return;
+
+        setNodes(nds => nds.map(node => {
+            if (node.id === activeResizeNodeId) {
+                const newLayouts = { ...node.data.layouts };
+                newLayouts[layoutData.sizeId] = layoutData.layoutData;
+
+                const newPreviews = { ...node.data.previews };
+                newPreviews[layoutData.sizeId] = layoutData.preview;
+
+                return {
+                    ...node,
+                    data: {
+                        ...node.data,
+                        layouts: newLayouts,
+                        previews: newPreviews
+                    }
+                };
+            }
+            return node;
+        }));
+
+        setIsCanvasEditorOpen(false);
+        setEditorSize(null);
+    }, [activeResizeNodeId, setNodes]);
+
+    const handleDeleteSize = useCallback((sizeId) => {
+        if (!activeResizeNodeId) return;
+
+        setNodes(nds => nds.map(node => {
+            if (node.id === activeResizeNodeId) {
+                return {
+                    ...node,
+                    data: {
+                        ...node.data,
+                        sizes: (node.data.sizes || []).filter(s => s.id !== sizeId),
+                        anchors: (node.data.anchors || []).filter(a => a.id !== sizeId)
+                    }
+                };
+            }
+            return node;
+        }));
+    }, [activeResizeNodeId, setNodes]);
+
+    const handleGenerate = useCallback(async (nodeId) => {
+        const { generateBatchLayouts, generatePreviewFromLayout } = require('../../lib/batchGenerator');
+
+        const node = nodesRef.current.find(n => n.id === nodeId);
+        if (!node) return;
+
+        const masterNode = nodesRef.current.find(n =>
+            edgesRef.current.some(e => e.source === n.id && e.target === nodeId)
+        );
+
+        const sizes = node.data.sizes || [];
+        const anchors = node.data.anchors || [];
+        const layouts = node.data.layouts || {};
+
+        if (anchors.length < 3) {
+            alert('Please set up all 3 anchor sizes (square, horizontal, vertical) before generating.');
+            return;
+        }
+
+        // Update node to show generating status
+        setNodes(nds => nds.map(n => {
+            if (n.id === nodeId) {
+                return {
+                    ...n,
+                    data: {
+                        ...n.data,
+                        status: 'Generating...'
+                    }
+                };
+            }
+            return n;
+        }));
+
+        try {
+            // Generate layouts for all non-anchor sizes
+            const nonAnchorSizes = sizes.filter(s => !anchors.some(a => a.id === s.id));
+            const batchResults = generateBatchLayouts(nonAnchorSizes, anchors, layouts);
+
+            // Generate previews
+            const newPreviews = {};
+            for (const result of batchResults) {
+                const preview = await generatePreviewFromLayout(
+                    result.layout,
+                    result.size,
+                    masterNode?.data.image
+                );
+                newPreviews[result.sizeId] = preview;
+            }
+
+            // Update node with generated previews
+            setNodes(nds => nds.map(n => {
+                if (n.id === nodeId) {
+                    return {
+                        ...n,
+                        data: {
+                            ...n.data,
+                            previews: {
+                                ...(n.data.previews || {}),
+                                ...newPreviews
+                            },
+                            status: `Generated ${Object.keys(newPreviews).length} formats`
+                        }
+                    };
+                }
+                return n;
+            }));
+
+            alert(`Successfully generated ${Object.keys(newPreviews).length} ad formats!`);
+        } catch (error) {
+            console.error('Generation failed:', error);
+            setNodes(nds => nds.map(n => {
+                if (n.id === nodeId) {
+                    return {
+                        ...n,
+                        data: {
+                            ...n.data,
+                            status: 'Generation failed'
+                        }
+                    };
+                }
+                return n;
+            }));
+            alert('Failed to generate ad formats. Please try again.');
+        }
+    }, [setNodes]);
 
     // Help convert any image (URL or Blob) to Base64 for the API
     const imageToBase64 = async (imageUrl) => {
@@ -306,6 +583,7 @@ function CanvasInterface() {
 
     // Save Project Logic
     const saveProject = useCallback(async () => {
+        // Allow saving if we have an ID or if it's a template (blank projects get an ID on mount now)
         if (!currentProjectId && !searchParams.get('template')) return;
 
         setIsSaving(true);
@@ -599,13 +877,35 @@ Hard requirements:
                 const asset = sn.data.output || sn.data.image || sn.data.video;
                 if (asset) results.images.push({ id: sn.id, image: asset });
 
-                const textVal = sn.data.text || (sn.data.output && typeof sn.data.output === 'string' ? sn.data.output : null);
+                // FIX: Strictly ensure we don't treat Image/Video outputs as text context
+                // 'text' node and 'inputText' node use data.text explicitly. 
+                // 'assistant' and 'aiAnalysis' output text in data.output or data.text.
+                let textVal = sn.data.text;
+
+                // If text is not explicitly set, check data.output ONLY for specific text-producing nodes
+                if (!textVal && sn.data.output && typeof sn.data.output === 'string') {
+                    if (['text', 'inputText', 'assistant', 'aiAnalysis'].includes(sn.type)) {
+                        textVal = sn.data.output;
+                    }
+                }
+
+                // Additional safety: If it contains base64 markers, ignore it for text context
+                if (textVal && (textVal.startsWith('data:') || textVal.includes(';base64,'))) {
+                    textVal = null;
+                }
+
                 const isPlaceholder = textVal && (
                     textVal.includes("Upload Product Info") ||
                     textVal.includes("Set custom preferences") ||
                     textVal.includes("Enter prompt or text content") ||
-                    textVal.length < 10
+                    textVal.includes("Type your text here") ||
+                    textVal.length < 5
                 );
+
+                // Additional safety: If it looks like a Data URI, reject it absolutely
+                if (textVal && textVal.startsWith('data:')) {
+                    textVal = null;
+                }
 
                 if (textVal && !isPlaceholder && !results.texts.includes(textVal)) {
                     results.texts.push(textVal);
@@ -651,7 +951,12 @@ Hard requirements:
             const sourceNodes = incomingEdges.map(e => nodesRef.current.find(n => n.id === e.source)).filter(Boolean);
             const upstreamData = getAllUpstreamData(id);
 
-            const inputImagesRaw = Array.from(new Map(upstreamData.images.map(item => [item.id, item])).values());
+            const inputImagesRaw = Array.from(new Map(upstreamData.images.map(item => [item.id, item])).values())
+                .sort((a, b) => {
+                    const nodeA = nodesRef.current.find(n => n.id === a.id);
+                    const nodeB = nodesRef.current.find(n => n.id === b.id);
+                    return (nodeA?.position?.y || 0) - (nodeB?.position?.y || 0);
+                });
 
             // Safety Guard: Detect if any upstream source is still in 'loading' / 'uploading' state
             const loadingNodes = inputImagesRaw.filter(img => {
@@ -705,6 +1010,11 @@ Hard requirements:
                 }
             }
 
+            // 3. Multi-image Numbering Context
+            if (inputImagesBase64.length > 1) {
+                contextParts.push(`[System: You are provided with ${inputImagesBase64.length} images, numbered 1 to ${inputImagesBase64.length} based on their vertical layout (top-to-bottom). Please reference them as "Image 1", "Image 2", etc. in your analysis or generation.]`);
+            }
+
             const PRODUCT_FIDELITY_INSTRUCTION = `[System: Maintain 1:1 product visual fidelity. Do not hallucinate features.]`;
 
             const contextString = contextParts.join('\n');
@@ -712,7 +1022,7 @@ Hard requirements:
 
             // If we have upstream context, wrap the prompt to ensure AI sees both
             if (contextString && nodeInstruction) {
-                finalPrompt = `${contextString}\nInput: ${nodeInstruction}\n${PRODUCT_FIDELITY_INSTRUCTION}`;
+                finalPrompt = `[BACKGROUND CONTEXT]\n${contextString}\n\n[PRIMARY USER DIRECTIVE]\nFollow these instructions precisely:\n${nodeInstruction}\n\n${PRODUCT_FIDELITY_INSTRUCTION}`;
             } else if (!nodeInstruction) {
                 finalPrompt = contextString ? `${contextString}\n${PRODUCT_FIDELITY_INSTRUCTION}` : PRODUCT_FIDELITY_INSTRUCTION;
             }
@@ -732,7 +1042,11 @@ Hard requirements:
 
             // Specialized Logic Per Node Type
             if (targetNode.type === 'aiAnalysis' || targetNode.type === 'assistant' || targetNode.type === 'text') {
-                if (targetNode.type === 'aiAnalysis' && inputImagesBase64.length === 0) throw new Error("Reference Image is required for analysis.");
+                if (targetNode.type === 'aiAnalysis' && inputImagesBase64.length === 0) {
+                    const hasSource = edgesRef.current.some(e => e.target === id);
+                    if (!hasSource) throw new Error("No source connected. Please connect an Image or Media node to the Director AI.");
+                    throw new Error("Reference Image is required. If you just uploaded, please wait for the image to appear before analyzing.");
+                }
                 // Ensure Analysis always uses its master system prompt if none is provided
                 if (targetNode.type === 'aiAnalysis' && !nodeInstruction) {
                     finalPrompt = `${contextString}\n\n${STORYBOARD_PROMPT}`;
@@ -748,6 +1062,8 @@ Hard requirements:
                     finalPrompt = `${contextString}\n\n<instruction>\n${fallbackPrompt}\n</instruction>\n\n${PRODUCT_FIDELITY_INSTRUCTION}`;
                 }
                 modelToUse = imageModel;
+            } else if (targetNode.type === 'videoGen' || targetNode.type === 'aiVideo') {
+                modelToUse = videoModel;
             }
 
             // 2. Generation Work
@@ -814,22 +1130,21 @@ Hard requirements:
 
                 const masterBase64 = await ensureSafeImageSize(await imageToBase64(masterImg));
                 const IAB_TASKS = [
+                    // Rectangles
                     { w: 300, h: 250, label: "Medium Rectangle" },
-                    { w: 728, h: 90, label: "Leaderboard" },
-                    { w: 160, h: 600, label: "Wide Skyscraper" },
-                    { w: 320, h: 50, label: "Mobile Banner" },
-                    { w: 970, h: 250, label: "Billboard" },
-                    { w: 300, h: 1050, label: "Portrait" },
                     { w: 336, h: 280, label: "Large Rectangle" },
+                    // Tall Vertical Units
                     { w: 300, h: 600, label: "Half-Page Ad" },
-                    { w: 970, h: 90, label: "Large Leaderboard" },
-                    { w: 468, h: 60, label: "Banner" },
+                    { w: 160, h: 600, label: "Wide Skyscraper" },
+                    { w: 300, h: 1050, label: "Portrait" },
+                    // Horizontal
+                    { w: 970, h: 250, label: "Billboard" },
+                    // Squares
                     { w: 250, h: 250, label: "Square" },
-                    { w: 120, h: 600, label: "Skyscraper" },
-                    { w: 300, h: 50, label: "Mobile Leaderboard" },
-                    { w: 300, h: 100, label: "Mobile Large Banner" },
-                    { w: 320, h: 100, label: "Mobile Large Banner" },
-                    { w: 200, h: 200, label: "Small Square" }
+                    { w: 200, h: 200, label: "Small Square" },
+                    // Mobile
+                    { w: 300, h: 100, label: "Mobile Banner" },
+                    { w: 320, h: 100, label: "Mobile Banner (L)" }
                 ];
 
                 console.log(`📐 --- PROGRAMMATIC AD ADAPTATION: Processing all ${IAB_TASKS.length} variants ---`);
@@ -869,14 +1184,38 @@ Hard requirements:
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
-                                prompt: `IAB Programmatic Adaptation: ${task.label} (${task.w}x${task.h}). 
-                                [Core Requirements]:
-                                ${iabBrandingLevel}
-                                
-                                [Layout Strategy]:
-                                ${layoutRule}
+                                prompt: `Role: You are an expert Creative Technologist and Production Artist specializing in Programmatic Advertising. You have deep expertise in IAB (Interactive Advertising Bureau) standards, visual hierarchy, and Python-based image processing.
+Task: Your objective is to take the single uploaded advertisement image and generate distinct adaptations corresponding to the specific dimensions listed below. You must rearrange the visual elements (Logo, Product, Copy, CTA) to suit each aspect ratio while preserving brand identity and legibility.
+Critical Constraint (Pixel Accuracy): You must guarantee 100% pixel accuracy for the downloadable files. The generative model's native output is often approximate. Therefore, you MUST use your internal Python Code Execution capabilities to process the final images. You will generate the visual assets and then programmatically resize/crop them to the exact integers provided using the PIL (Pillow) library before presenting them to me.
+Input Data (Target Dimensions):
 
-                                [System Instruction]: Only use the elements from the provided master image. Resize and rearrange them. Do NOT introduce new decorative elements or hallucinated text. Keep the light purple aesthetic. ${PRODUCT_FIDELITY_INSTRUCTION}.`,
+[Target Dimension]: ${task.w} x ${task.h}
+
+Workflow Execution Instructions:
+Phase 1: Semantic Analysis & Thinking (Mental Scratchpad)
+Analyze the Source: Identify the "Hero" element (product/person), the "Brand" element (logo), and the "Message" (text/CTA).
+Plan the Layouts:
+For Vertical High-Impact (e.g., 300x600): Plan to stack elements: Logo Top -> Hero Image Middle -> Text/CTA Bottom. Use "Outpainting" to extend the background vertically (floor/sky) to fill the space without stretching the product.
+
+Phase 2: Generative Creation (The Art)
+Generate the necessary visual variations. You may need to generate a few "Master Canvases" (e.g., one ultra-wide canvas for leaderboards, one ultra-tall canvas for skyscrapers) from which you will crop the final assets.
+IMPORTANT: Do not simply stretch the original image. You must use your generative capabilities to rearrange the elements. If moving from Square to Leaderboard, move the text to the side of the product.
+Text Preservation: Ensure any text generated is legible. If the source text is complex, you may use Python to overlay text, or prioritize preserving the visual text clarity in the generation.
+Phase 3: Deterministic Processing (The Code)
+Write and execute a Python script.
+Library: Use PIL (Pillow).
+Logic:
+Load the generated Master Canvas(es).
+Create a dictionary of the 3 target dimensions.
+Iterate through the dictionary. For each dimension:
+Create a new blank image of the exact target size (e.g., Image.new('RGB', (${task.w}, ${task.h}))).
+Resize/Crop the generated content to fit this target, using Image.Resampling.LANCZOS for quality. Ensure the aspect ratio of the content is preserved (fit-to-width or fit-to-height) and center it, or use the layout logic defined in Phase 1.
+Save the file with a descriptive name: Ad_Variant_${task.h}.png.
+Verification: The script must print the dimensions of the saved files to the console to verify they match the input list exactly.
+
+Phase 4: Output
+Present the verified image file for download.
+User Input: [I have uploaded the advertisement image. Please proceed.]`,
                                 apiKey,
                                 model: imageModel,
                                 images: [masterBase64],
@@ -951,7 +1290,7 @@ Hard requirements:
                 }
 
                 data = { outputs: finalOutputs };
-            } else if (targetNode.type === 'videoGen') {
+            } else if (targetNode.type === 'videoGen' || targetNode.type === 'aiVideo') {
                 // Optimized Asset Selection (Image-to-Video Focus):
                 // 1. Prioritize Direct Parent Nodes that specifically provide Images (ImageGen, AIImage, Storyboard)
                 if (!hdImages || hdImages.length === 0) {
@@ -1139,6 +1478,15 @@ Style: High-Fidelity Product Showcase`;
                             const pollData = await pollRes.json();
 
                             if (pollData.error) {
+                                const msg = pollData.error.message || '';
+                                const isOverloaded = msg.toLowerCase().includes('overloaded') || pollData.error.code === 429 || pollData.error.code === 503;
+
+                                if (isOverloaded) {
+                                    console.warn(`AI Engine Overloaded. Pausing polling for 10s... (Error: ${msg})`);
+                                    await new Promise(r => setTimeout(r, 10000));
+                                    continue;
+                                }
+
                                 throw new Error(`AI Engine Error: ${pollData.error.message || 'The operation failed.'}`);
                             }
 
@@ -1272,6 +1620,7 @@ Style: High-Fidelity Product Showcase`;
                             apiKey,
                             model: modelToUse,
                             images: inputImagesBase64,
+                            preferText: ['text', 'assistant', 'aiAnalysis'].includes(targetNode.type),
                             ...(['aiImage', 'imageGen'].includes(targetNode.type) ? { aspectRatio: targetNode.data.aspectRatio || "1:1" } : {})
                         })
                     });
@@ -1330,11 +1679,12 @@ Style: High-Fidelity Product Showcase`;
             // 1. Prepare updated node data
             let updatedData = { ...targetNode.data, loading: false, status: 'Complete' };
 
-            if (targetNode.type === 'aiAnalysis' && data.text) {
+            const rawText = data.text || data.output;
+            if (targetNode.type === 'aiAnalysis' && rawText) {
                 let parsedJSON = { shots: [] };
                 try {
                     // Try to harvest JSON from code blocks first
-                    const jsonMatch = data.text.match(/```json\n([\s\S]*?)\n```/) || data.text.match(/\{[\s\S]*\}/);
+                    const jsonMatch = rawText.match(/```json\n([\s\S]*?)\n```/) || rawText.match(/\{[\s\S]*\}/);
                     if (jsonMatch) {
                         parsedJSON = JSON.parse(jsonMatch[1] || jsonMatch[0]);
                     }
@@ -1343,7 +1693,7 @@ Style: High-Fidelity Product Showcase`;
                 }
 
                 updatedData.analysis = {
-                    full_text: data.text,
+                    full_text: rawText,
                     theme: parsedJSON.theme || "Cinematic Sequence",
                     shots: parsedJSON.shots || [], // Store the structured shots
                     // Legacy support for older templates
@@ -1351,9 +1701,9 @@ Style: High-Fidelity Product Showcase`;
                 };
             } else if (targetNode.type === 'imageSplitter') {
                 updatedData.frames = data.frames;
-            } else if (targetNode.type === 'videoGen') {
-                updatedData.clips = data.clips;
-                updatedData.output = data.clips[0];
+            } else if (targetNode.type === 'videoGen' || targetNode.type === 'aiVideo') {
+                updatedData.clips = data.clips || [data.output].filter(Boolean);
+                updatedData.output = data.output || (data.clips && data.clips[0]);
             } else if (targetNode.type === 'assistant') {
                 const userMsg = { role: 'user', content: customPrompt || targetNode.data.prompt || "Hello" };
                 const aiMsg = { role: 'assistant', content: data.text || data.output };
@@ -1493,8 +1843,9 @@ Style: High-Fidelity Product Showcase`;
                 return next;
             });
 
-            // Autosave after upload
-            saveProject();
+            // Autosave will be triggered by the useEffect observing `nodes`
+            // saveProject(); removed to prevent race conditions with nodesRef
+
 
         } catch (error) {
             console.error('Upload failed:', error);
@@ -1635,31 +1986,36 @@ Style: High-Fidelity Product Showcase`;
                 }
             };
             load();
-            return; // Exit here as load() handles the rest
-        } else if (tmplId && TEMPLATES[tmplId]) {
-            initialNodes = TEMPLATES[tmplId].nodes;
-            initialEdges = TEMPLATES[tmplId].edges || [];
-            name = TEMPLATES[tmplId].name;
+            return;
         } else {
-            // New Blank Canvas
-            initialNodes = [];
-            initialEdges = [];
-            name = "Space - Blank Canvas";
-            // Open Selector Immediately
-            setTimeout(() => setIsNodeSelectorOpen(true), 500);
+            // New Project (Blank or Template)
+            if (tmplId && TEMPLATES[tmplId]) {
+                initialNodes = TEMPLATES[tmplId].nodes;
+                initialEdges = TEMPLATES[tmplId].edges || [];
+                name = TEMPLATES[tmplId].name;
+            } else {
+                // New Blank Canvas
+                initialNodes = [];
+                initialEdges = [];
+                name = "Space - Blank Canvas";
+                // Open Selector Immediately
+                setTimeout(() => setIsNodeSelectorOpen(true), 500);
+            }
+
+            // Generate a permanent ID for this new session
+            const newPid = `p_${Date.now()}`;
+            setCurrentProjectId(newPid);
+            setProjectName(name);
+            setNodes(applyCallbacks(initialNodes));
+            setEdges(initialEdges);
+
+            // Update URL so a refresh stays on this project
+            const newParams = new URLSearchParams(searchParams);
+            newParams.set('projectId', newPid);
+            if (tmplId) newParams.delete('template');
+            router.replace(`/canvas?${newParams.toString()}`, { scroll: false });
         }
-
-        setProjectName(name);
-
-        setNodes(applyCallbacks(initialNodes));
-        setEdges(initialEdges);
-
-        if (initialViewport && reactFlowInstance.current) {
-            setTimeout(() => {
-                reactFlowInstance.current?.setViewport(initialViewport);
-            }, 100);
-        }
-    }, [projectId, searchParams, onGenerate, onNodeDataChange, onNodeDelete, handleImageUpload, setNodes, setEdges]);
+    }, [projectId, searchParams, router]);
 
     const addNode = useCallback((type) => {
         takeSnapshot();
@@ -1669,7 +2025,11 @@ Style: High-Fidelity Product Showcase`;
             type: type,
             position: selectorPos,
             data: {
-                label: type,
+                label: type === 'aiVideo' ? 'Video Generator' :
+                    type === 'videoGen' ? 'Cinematic Producer' :
+                        type === 'aiAnalysis' ? 'Director AI' :
+                            type === 'text' ? 'AI Text Gen' :
+                                type === 'inputText' ? 'Input Text' : type,
                 onGenerate: onGenerate,
                 onDataChange: onNodeDataChange,
                 onImageUpload: handleImageUpload,
@@ -1690,16 +2050,21 @@ Style: High-Fidelity Product Showcase`;
             visited.add(nodeId);
 
             const incoming = currentEdges.filter(e => e.target === nodeId);
-            let images = [];
+            let results = [];
 
             for (const edge of incoming) {
                 const sn = currentNodes.find(n => n.id === edge.source);
                 if (!sn) continue;
+
                 const img = sn.data.output || sn.data.image;
-                if (img) images.push(img);
-                images = [...images, ...getAllUpstreamImg(sn.id, currentEdges, currentNodes, visited)];
+                if (img) {
+                    results.push({ url: img, y: sn.position.y });
+                }
+
+                // Recurse to find images from even further upstream
+                results = [...results, ...getAllUpstreamImg(sn.id, currentEdges, currentNodes, visited)];
             }
-            return images;
+            return results;
         };
 
         setNodes(nds => {
@@ -1708,12 +2073,29 @@ Style: High-Fidelity Product Showcase`;
                 const isGen = ['aiImage', 'imageGen', 'text', 'aiAnalysis', 'assistant', 'aiVideo', 'videoGen'].includes(node.type);
                 if (!isGen) return node;
 
-                const upstreamImages = getAllUpstreamImg(node.id, edges, nds);
-                const firstImg = upstreamImages[0] || null;
+                const upstreamItems = getAllUpstreamImg(node.id, edges, nds);
+                // Sort by Y position (top to bottom) as requested by user
+                const sortedImages = upstreamItems
+                    .sort((a, b) => a.y - b.y)
+                    .map(item => item.url);
 
-                if (node.data.refImage !== firstImg) {
+                // Deduplicate URLs while maintaining order
+                const finalImages = [...new Set(sortedImages)];
+                const firstImg = finalImages[0] || null;
+
+                const currentRefImages = JSON.stringify(node.data.refImages || []);
+                const nextRefImages = JSON.stringify(finalImages);
+
+                if (currentRefImages !== nextRefImages || node.data.refImage !== firstImg) {
                     changed = true;
-                    return { ...node, data: { ...node.data, refImage: firstImg } };
+                    return {
+                        ...node,
+                        data: {
+                            ...node.data,
+                            refImages: finalImages,
+                            refImage: firstImg
+                        }
+                    };
                 }
                 return node;
             });
@@ -1912,7 +2294,21 @@ Style: High-Fidelity Product Showcase`;
             {/* Main Canvas */}
             <div className="flow-container">
                 <ReactFlow
-                    nodes={nodes}
+                    nodes={applyCallbacks(nodes).map(node => {
+                        if (node.type === 'smartResize') {
+                            return {
+                                ...node,
+                                data: {
+                                    ...node.data,
+                                    onAddSize: handleAddSize,
+                                    onViewDashboard: handleViewDashboard,
+                                    onGenerate: handleGenerate,
+                                    onDelete: onNodeDelete
+                                }
+                            };
+                        }
+                        return node;
+                    })}
                     edges={edges}
                     onNodesChange={onNodesChange}
                     onEdgesChange={onEdgesChange}
@@ -1984,10 +2380,17 @@ Style: High-Fidelity Product Showcase`;
                                 </div>
                             </div>
                             <div className="selector-item" onClick={() => addNode('text')}>
-                                <span className="icon">💬</span>
+                                <span className="icon">⚡</span>
                                 <div className="info">
-                                    <h3>Text</h3>
-                                    <p>Prompts, Copy overlays</p>
+                                    <h3>AI Text Gen</h3>
+                                    <p>Generative Copy</p>
+                                </div>
+                            </div>
+                            <div className="selector-item" onClick={() => addNode('inputText')}>
+                                <span className="icon">📝</span>
+                                <div className="info">
+                                    <h3>Input Text</h3>
+                                    <p>Simple Text Input</p>
                                 </div>
                             </div>
                             <div className="selector-item" onClick={() => addNode('aiImage')}>
@@ -2099,11 +2502,71 @@ Style: High-Fidelity Product Showcase`;
                             <img src={expandedMedia} alt="Full View" className="full-view-media" />
                         )}
                         <div className="lightbox-actions">
-                            <a href={expandedMedia} download="starnet_output" className="download-link">Download Asset</a>
+                            <a href={expandedMedia} download="campaign_output" className="download-link">Download Asset</a>
                         </div>
                     </div>
                 </div>
             )}
+
+            {/* Smart Resize Modal */}
+            <SizeSelectionModal
+                isOpen={isSizeModalOpen}
+                onClose={() => setIsSizeModalOpen(false)}
+                onSelect={handleSizeSelect}
+                selectedSizes={activeResizeNodeId ? (nodes.find(n => n.id === activeResizeNodeId)?.data.sizes || []).map(s => s.id) : []}
+            />
+
+            {/* Campaign Dashboard */}
+            {isDashboardOpen && activeResizeNodeId && (() => {
+                const node = nodes.find(n => n.id === activeResizeNodeId);
+                const masterNode = nodes.find(n => edges.some(e => e.source === n.id && e.target === activeResizeNodeId));
+                return (
+                    <CampaignDashboard
+                        sizes={node?.data.sizes || []}
+                        anchors={node?.data.anchors || []}
+                        onEdit={handleEditSize}
+                        onDelete={handleDeleteSize}
+                        onClose={handleCloseDashboard}
+                        masterImage={masterNode?.data.image}
+                        previews={node?.data.previews || {}}
+                    />
+                );
+            })()}
+
+            {/* Canvas Editor */}
+            {isCanvasEditorOpen && editorSize && activeResizeNodeId && (() => {
+                const node = nodes.find(n => n.id === activeResizeNodeId);
+                const masterNode = nodes.find(n => edges.some(e => e.source === n.id && e.target === activeResizeNodeId));
+                const isAnchor = node?.data.anchors?.some(a => a.id === editorSize.id);
+                const layoutData = node?.data.layouts?.[editorSize.id];
+
+                return (
+                    <CanvasEditor
+                        size={editorSize}
+                        masterImage={masterNode?.data.image}
+                        layoutData={layoutData}
+                        onSave={handleSaveLayout}
+                        onClose={() => setIsCanvasEditorOpen(false)}
+                        isAnchor={isAnchor}
+                    />
+                );
+            })()}
+
+            {/* Anchor Workflow Modal */}
+            {isAnchorWorkflowOpen && activeResizeNodeId && (() => {
+                const node = nodes.find(n => n.id === activeResizeNodeId);
+                const { getAllSizes } = require('../../lib/adSizes');
+
+                return (
+                    <AnchorWorkflowModal
+                        isOpen={isAnchorWorkflowOpen}
+                        onClose={() => setIsAnchorWorkflowOpen(false)}
+                        currentAnchors={node?.data.anchors || []}
+                        onSelectAnchor={handleAnchorSelect}
+                        allSizes={getAllSizes()}
+                    />
+                );
+            })()}
 
             <style jsx>{`
                 .canvas-page {

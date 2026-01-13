@@ -33,6 +33,17 @@ export default memo(({ id, data, selected }) => {
                     )}
                 </div>
 
+                {data.refImages && data.refImages.length > 0 && (
+                    <div className="ref-images-container">
+                        {data.refImages.map((img, idx) => (
+                            <div key={idx} className="ref-image-mini">
+                                <img src={img} alt={`ref-${idx + 1}`} />
+                                <span className="badge">{idx + 1}</span>
+                            </div>
+                        ))}
+                    </div>
+                )}
+
                 <div className="input-row">
                     <input
                         type="text"
@@ -97,6 +108,42 @@ export default memo(({ id, data, selected }) => {
                 .assistant { background: white; color: #1e293b; border: 1px solid #e2e8f0; }
                 .user { background: #10b981; color: white; align-self: flex-end; }
                 
+                .ref-images-container {
+                    display: flex;
+                    gap: 6px;
+                    flex-wrap: wrap;
+                    margin-bottom: 8px;
+                }
+                .ref-image-mini {
+                    position: relative;
+                    width: 32px;
+                    height: 32px;
+                    border-radius: 6px;
+                    border: 1px solid #e2e8f0;
+                }
+                .ref-image-mini img {
+                    width: 100%;
+                    height: 100%;
+                    object-fit: cover;
+                    border-radius: 6px;
+                }
+                .ref-image-mini .badge {
+                    position: absolute;
+                    top: -5px;
+                    right: -5px;
+                    background: #10b981;
+                    color: white;
+                    font-size: 0.6rem;
+                    width: 14px;
+                    height: 14px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    border-radius: 50%;
+                    font-weight: 800;
+                    border: 1px solid white;
+                }
+
                 .hint { color: #94a3b8; text-align: center; margin-top: 40px; }
                 
                 .input-row {

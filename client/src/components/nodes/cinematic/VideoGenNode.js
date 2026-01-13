@@ -1,10 +1,88 @@
 "use client";
-import React, { memo } from 'react';
+import React, { memo, useState, useRef } from 'react';
 import { Handle, Position, NodeToolbar } from 'reactflow';
 import { getDisplayName } from '../../../lib/models';
 
 export default memo(({ id, data, selected }) => {
     const clips = data.clips || [];
+    const [isMerging, setIsMerging] = useState(false);
+
+    // --- Video Stitching Algorithm (Client-Side Canvas Recording) ---
+    const handleMerge = async (force = false) => {
+        if ((!force && data.mergedVideo) || clips.length < 2) return;
+
+        setIsMerging(true);
+        console.log("🎬 Stitching started...");
+
+        try {
+            const canvas = document.createElement('canvas');
+            const ctx = canvas.getContext('2d');
+            const video = document.createElement('video');
+            video.muted = true;
+            video.playsInline = true;
+            video.crossOrigin = "anonymous"; // Important for CORS
+
+            // Wait for metadata to set canvas size
+            await new Promise((resolve, reject) => {
+                video.onloadedmetadata = () => {
+                    canvas.width = video.videoWidth || 1024;
+                    canvas.height = video.videoHeight || 576;
+                    resolve();
+                };
+                video.onerror = reject;
+                video.src = clips[0];
+            });
+
+            const stream = canvas.captureStream(30); // 30 FPS
+            const mediaRecorder = new MediaRecorder(stream, {
+                mimeType: MediaRecorder.isTypeSupported('video/webm;codecs=vp9') ? 'video/webm;codecs=vp9' : 'video/webm'
+            });
+
+            const chunks = [];
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data.size > 0) chunks.push(e.data);
+            };
+
+            mediaRecorder.start();
+
+            // Playback Loop
+            for (const clipUrl of clips) {
+                await new Promise((resolve, reject) => {
+                    video.src = clipUrl;
+                    video.onloadeddata = () => {
+                        video.play();
+
+                        const draw = () => {
+                            if (video.paused || video.ended) return;
+                            ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+                            requestAnimationFrame(draw);
+                        };
+                        draw();
+                    };
+                    video.onended = resolve;
+                    video.onerror = (e) => {
+                        console.error("Clip Error:", e);
+                        resolve(); // Skip bad clips
+                    };
+                });
+            }
+
+            mediaRecorder.stop();
+            await new Promise(r => { mediaRecorder.onstop = r; });
+
+            const blob = new Blob(chunks, { type: 'video/webm' });
+            const finalUrl = URL.createObjectURL(blob);
+
+            console.log("✅ Stitching complete:", finalUrl);
+            data.onDataChange(id, { mergedVideo: finalUrl });
+
+        } catch (err) {
+            console.error("Stitching failed:", err);
+            alert("Failed to combine videos. See console.");
+        } finally {
+            setIsMerging(false);
+        }
+    };
 
     return (
         <div className={`node-container ${selected ? 'selected' : ''}`}>
@@ -42,6 +120,7 @@ export default memo(({ id, data, selected }) => {
             </div>
 
             <div className="node-content">
+                {/* 1. Clips Grid */}
                 {clips.length > 0 ? (
                     <div className="clips-grid-wrapper">
                         <div className="clips-grid">
@@ -50,8 +129,11 @@ export default memo(({ id, data, selected }) => {
                                     {clip && (
                                         <video
                                             src={clip}
-                                            controls
                                             className="clip-video"
+                                            onMouseOver={e => e.target.play()}
+                                            onMouseOut={e => e.target.pause()}
+                                            muted
+                                            playsInline
                                             onError={(e) => {
                                                 console.warn(`Clip ${i + 1} failed to load:`, clip);
                                                 e.target.style.display = 'none';
@@ -73,6 +155,35 @@ export default memo(({ id, data, selected }) => {
                     </div>
                 )}
 
+                {/* 2. Full Video Merger Section */}
+                {clips.length > 1 && (
+                    <div className="merge-section">
+                        <div className="merge-header">
+                            <span className="icon">🎞️</span> Final Cut
+                        </div>
+
+                        {data.mergedVideo ? (
+                            <div className="merged-preview">
+                                <video src={data.mergedVideo} controls className="merged-video" />
+                                <div className="merged-actions">
+                                    <button className="mini-btn" onClick={() => data.onExpand && data.onExpand(data.mergedVideo)}>⛶</button>
+                                    <a href={data.mergedVideo} download={`full_sequence_${id}.webm`} className="mini-btn">⬇</a>
+                                    <button className="mini-btn" onClick={() => handleMerge(true)}>↻</button>
+                                </div>
+                            </div>
+                        ) : (
+                            <button
+                                className="merge-btn"
+                                onClick={() => handleMerge(false)}
+                                disabled={isMerging}
+                            >
+                                {isMerging ? 'Stitching...' : 'Combine All Clips into One Video'}
+                            </button>
+                        )}
+                    </div>
+                )}
+
+                {/* 3. AI Controls */}
                 <div className="ai-input-bar">
                     <div className="input-top">
                         <button className="tool-btn-square">
@@ -186,6 +297,63 @@ export default memo(({ id, data, selected }) => {
                 .clip-box video { width: 100%; height: 100%; object-fit: contain; display: block; }
                 .clip-label { position: absolute; bottom: 2px; right: 2px; background: rgba(0,0,0,0.6); color: white; font-size: 0.5rem; padding: 1px 4px; border-radius: 3px; font-weight: 700; }
                 
+                .merge-section {
+                    background: #f1f5f9;
+                    border-radius: 12px;
+                    padding: 8px;
+                    margin: 4px 0;
+                    border: 1px solid #e2e8f0;
+                }
+                .merge-header {
+                    font-size: 0.7rem;
+                    font-weight: 800;
+                    color: #475569;
+                    margin-bottom: 6px;
+                    text-transform: uppercase;
+                    display: flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+                .merge-btn {
+                    width: 100%;
+                    background: #334155;
+                    color: white;
+                    border: none;
+                    padding: 8px;
+                    border-radius: 6px;
+                    font-size: 0.75rem;
+                    font-weight: 600;
+                    cursor: pointer;
+                    transition: all 0.2s;
+                }
+                .merge-btn:hover:not(:disabled) { background: #475569; }
+                .merge-btn:disabled { opacity: 0.7; cursor: wait; }
+                
+                .merged-preview { position: relative; border-radius: 8px; overflow: hidden; }
+                .merged-video { width: 100%; display: block; border-radius: 8px; }
+                .merged-actions {
+                    position: absolute;
+                    bottom: 8px;
+                    right: 8px;
+                    display: flex;
+                    gap: 4px;
+                }
+                .mini-btn {
+                    background: rgba(0,0,0,0.6);
+                    color: white;
+                    border: 1px solid rgba(255,255,255,0.2);
+                    width: 24px;
+                    height: 24px;
+                    border-radius: 4px;
+                    display: flex;
+                    align-items: center;
+                    justify-content: center;
+                    cursor: pointer;
+                    font-size: 0.8rem;
+                    text-decoration: none;
+                }
+                .mini-btn:hover { background: #ff3d71; border-color: #ff3d71; }
+
                 .gen-placeholder {
                     height: 120px;
                     border-radius: 16px;

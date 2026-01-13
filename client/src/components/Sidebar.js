@@ -6,21 +6,12 @@ export default function Sidebar() {
   const pathname = usePathname();
 
   const menuItems = [
-    { name: 'Influencer Discovery', path: '/influencers', icon: <InfluencersIcon /> },
-    { name: 'AI Matching Assistant', path: '/ai-matching', icon: <AiIcon /> },
     { name: 'Campaigns', path: '/campaigns', icon: <CampaignsIcon /> },
-    { name: 'Ad Library', path: '/ad-library', icon: <AdLibraryIcon /> },
-    { name: 'My Zone', path: '/my-zone', icon: <MyZoneIcon /> },
     { name: 'Settings', path: '/settings', icon: <SettingsIcon /> },
   ];
 
   return (
     <aside className="sidebar">
-      <div className="logo-container">
-        <span className="logo-icon">★</span>
-        <span className="logo-text">starnet.ai</span>
-      </div>
-
       <nav className="nav-menu">
         {menuItems.map((item) => {
           const isActive = pathname === item.path || (item.path === '/dashboard' && pathname === '/');
@@ -37,19 +28,6 @@ export default function Sidebar() {
         })}
       </nav>
 
-      <div className="user-profile">
-        <div className="avatar">JD</div>
-        <div className="user-info">
-          <span className="user-name">John Doe</span>
-          <span className="user-plan">Pro Plan</span>
-          <button
-            onClick={() => window.open('https://aistudio.google.com/app/plan', '_blank')}
-            className="billing-link"
-          >
-            Check Billing Plan
-          </button>
-        </div>
-      </div>
 
       <style jsx>{`
         .sidebar {

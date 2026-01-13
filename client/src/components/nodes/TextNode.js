@@ -45,7 +45,16 @@ export default memo(({ id, data, selected }) => {
             </div>
 
             <div className="ai-input-bar">
-                {data.refImage && (
+                {data.refImages && data.refImages.length > 0 ? (
+                    <div className="ref-images-container">
+                        {data.refImages.map((img, idx) => (
+                            <div key={idx} className="ref-image-mini">
+                                <img src={img} alt={`ref-${idx + 1}`} />
+                                <span className="badge">{idx + 1}</span>
+                            </div>
+                        ))}
+                    </div>
+                ) : data.refImage && (
                     <div className="input-top">
                         <div className="ref-image-mini">
                             <img src={data.refImage} alt="ref" />
@@ -143,6 +152,12 @@ export default memo(({ id, data, selected }) => {
                     flex-direction: column;
                     gap: 8px;
                     border: 1px solid #e2e8f0;
+                }
+                .ref-images-container {
+                    display: flex;
+                    gap: 8px;
+                    flex-wrap: wrap;
+                    margin-bottom: 8px;
                 }
                 .input-top {
                     display: flex;

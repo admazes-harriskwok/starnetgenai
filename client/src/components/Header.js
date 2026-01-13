@@ -4,18 +4,7 @@ export default function Header() {
   return (
     <header className="header">
       <div className="header-right">
-        <div className="language-selector">
-          繁體中文 <span className="arrow">⌄</span>
-        </div>
-        <div className="notification">
-          <span className="bell">🔔</span>
-          <span className="badge">17</span>
-        </div>
-        <div className="user-profile">
-          <div className="avatar"></div>
-          <span className="username">Tracy Lee</span>
-          <span className="arrow">⌄</span>
-        </div>
+        {/* Placeholder for future header elements */}
       </div>
 
       <style jsx>{`
