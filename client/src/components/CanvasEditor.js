@@ -91,7 +91,7 @@ export default function CanvasEditor({
 
     const addDefaultElements = (canvas) => {
         // Add sample text
-        const title = new fabric.Textbox('YEAR-END SALE', {
+        const title = new fabric.Textbox('YOUR HEADLINE', {
             left: 50,
             top: 50,
             width: size.width - 100,
@@ -129,7 +129,7 @@ export default function CanvasEditor({
             shadow: new fabric.Shadow({ color: 'rgba(0,0,0,0.2)', blur: 10, offsetX: 0, offsetY: 4 })
         });
 
-        const buttonText = new fabric.Text('Shop Now', {
+        const buttonText = new fabric.Text('CALL TO ACTION', {
             left: size.width / 2,
             top: size.height - 68,
             fontSize: 16,

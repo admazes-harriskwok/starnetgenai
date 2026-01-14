@@ -100,7 +100,7 @@ function CanvasInterface() {
     useEffect(() => {
         const config = JSON.parse(localStorage.getItem('starnet_config') || '{}');
         const textModel = config.model || 'gemini-3-flash';
-        const imageModel = config.imageModel || 'gemini-2.5-flash-image';
+        const imageModel = config.imageModel || 'nano-banana-pro-preview';
         const videoModel = config.videoModel || 'veo-2.0-generate-001';
 
         setNodes((nds) => nds.map(node => {
@@ -544,34 +544,87 @@ function CanvasInterface() {
     const resizeBase64Image = async (base64, width, height) => {
         return new Promise((resolve) => {
             const img = new Image();
+            img.crossOrigin = 'anonymous';
             img.onload = () => {
                 const canvas = document.createElement('canvas');
                 canvas.width = width;
                 canvas.height = height;
                 const ctx = canvas.getContext('2d');
 
-                // HIGH FIDELITY RESIZE: Maintain aspect ratio by using an 'aspect-cover' Strategy
-                // This prevents stretching when the AI output doesn't perfectly match requested IAB pixels.
                 const imgRatio = img.width / img.height;
                 const targetRatio = width / height;
 
-                let sw, sh, sx, sy;
-                if (imgRatio > targetRatio) {
-                    // Source is wider than target
-                    sh = img.height;
-                    sw = img.height * targetRatio;
-                    sx = (img.width - sw) / 2;
-                    sy = 0;
+                // SMART RESIZE LOGIC:
+                // If aspect ratios differ significantly (>25%), use "Contain" (Fit) with Background Extension.
+                // This solves the issue where AI models return Square images for extreme formats.
+                const ratioDiff = Math.max(imgRatio / targetRatio, targetRatio / imgRatio);
+                const isRatioMismatch = ratioDiff > 1.25;
+
+                if (isRatioMismatch) {
+                    // Strategy: CONTAIN + BACKGROUND EXTENSION
+
+                    // 1. Sample Background Color
+                    const tempCanvas = document.createElement('canvas');
+                    tempCanvas.width = 1;
+                    tempCanvas.height = 1;
+                    const tempCtx = tempCanvas.getContext('2d');
+                    tempCtx.drawImage(img, 0, 0, 1, 1, 0, 0, 1, 1);
+
+                    try {
+                        const [r, g, b, a] = tempCtx.getImageData(0, 0, 1, 1).data;
+                        const bgColor = `rgba(${r},${g},${b},${a / 255})`;
+                        ctx.fillStyle = bgColor;
+                    } catch (e) {
+                        // Fallback for tainted canvas
+                        ctx.fillStyle = '#ffffff';
+                    }
+
+                    ctx.fillRect(0, 0, width, height);
+
+                    // 2. Draw Image Centered (Contain)
+                    let newW, newH;
+                    if (imgRatio > targetRatio) {
+                        // Image is wider relative to target -> Fit Width
+                        newW = width;
+                        newH = width / imgRatio;
+                    } else {
+                        // Image is taller relative to target -> Fit Height
+                        newH = height;
+                        newW = height * imgRatio;
+                    }
+
+                    // Center Position
+                    const x = (width - newW) / 2;
+                    const y = (height - newH) / 2;
+
+                    ctx.drawImage(img, x, y, newW, newH);
+
                 } else {
-                    // Source is taller than target
-                    sw = img.width;
-                    sh = img.width / targetRatio;
-                    sx = 0;
-                    sy = (img.height - sh) / 2;
+                    // Strategy: COVER (Crop) - Best for small adjustments
+                    // HIGH FIDELITY RESIZE: Maintain aspect ratio by using an 'aspect-cover' Strategy
+                    let sw, sh, sx, sy;
+                    if (imgRatio > targetRatio) {
+                        // Source is wider than target
+                        sh = img.height;
+                        sw = img.height * targetRatio;
+                        sx = (img.width - sw) / 2;
+                        sy = 0;
+                    } else {
+                        // Source is taller than target
+                        sw = img.width;
+                        sh = img.width / targetRatio;
+                        sx = 0;
+                        sy = (img.height - sh) / 2;
+                    }
+
+                    ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
                 }
 
-                ctx.drawImage(img, sx, sy, sw, sh, 0, 0, width, height);
                 resolve(canvas.toDataURL('image/png'));
+            };
+            img.onerror = () => {
+                console.warn("Resize failed: Image load error");
+                resolve(base64);
             };
             img.src = base64;
         });
@@ -1151,7 +1204,7 @@ Hard requirements:
 
                 // We split the 16 tasks into two batches to respect API limits while ensuring all variants are generated
                 const finalOutputs = new Array(IAB_TASKS.length).fill(null);
-                const batchSize = 8;
+                const batchSize = 2; // Reduced from 8 to 2 to prevent timeouts on Netlify functions
 
                 for (let b = 0; b < IAB_TASKS.length; b += batchSize) {
                     const batchIndices = Array.from({ length: Math.min(batchSize, IAB_TASKS.length - b) }, (_, i) => b + i);
@@ -1165,11 +1218,10 @@ Hard requirements:
                         const isExtremeWide = task.w / task.h >= 3.0;
 
                         const iabBrandingLevel = `
-                        1. HEADLINE: "YEAR-END SALE" (Bold, prominent).
-                        2. PRICE: "$68*" (Include the dollar sign). 
-                        3. DATE: "Valid: 29 Dec 2025 - 30 Jun 2026" (Must be fully readable).
-                        4. FOOTER: "Terms and conditions apply. Buy now at participating outlets." (No gibberish).
-                        5. PRODUCT: Central focus, high fidelity.
+                        1. BRANDING: Extract the exact Logo and Brand Name from the source image.
+                        2. TEXT CONTENT: Identify and preserve ALL text from the source image (Headline, CTA, Price, Disclaimer).
+                        3. PRODUCT: Maintain 1:1 visual fidelity of the primary product or subject.
+                        4. STYLE: Preserve the exact color palette, typography style, and lighting setup from the source.
                         `;
 
                         const layoutRule = isExtremeTall
@@ -1180,12 +1232,21 @@ Hard requirements:
                                     ? "Horizontal Layout: Branding on left, Product on right, Price badge in middle. Ample padding."
                                     : (ratio === "square" ? "Square Layout: Centered branding, Product below, Price badge corner. Clean margins." : "Vertical Layout: Branding top, Product center, Price badge bottom. Stacked alignment.")));
 
+                        const preferredModel = targetNode.data.model || imageModel;
+
                         return fetch('/api/generate', {
                             method: 'POST',
                             headers: { 'Content-Type': 'application/json' },
                             body: JSON.stringify({
                                 prompt: `Role: You are an expert Creative Technologist and Production Artist specializing in Programmatic Advertising. You have deep expertise in IAB (Interactive Advertising Bureau) standards, visual hierarchy, and Python-based image processing.
 Task: Your objective is to take the single uploaded advertisement image and generate distinct adaptations corresponding to the specific dimensions listed below. You must rearrange the visual elements (Logo, Product, Copy, CTA) to suit each aspect ratio while preserving brand identity and legibility.
+
+[SYSTEM INSTRUCTIONS]:
+${iabBrandingLevel}
+
+[LAYOUT RULE FOR THIS SIZE]:
+${layoutRule}
+
 Critical Constraint (Pixel Accuracy): You must guarantee 100% pixel accuracy for the downloadable files. The generative model's native output is often approximate. Therefore, you MUST use your internal Python Code Execution capabilities to process the final images. You will generate the visual assets and then programmatically resize/crop them to the exact integers provided using the PIL (Pillow) library before presenting them to me.
 Input Data (Target Dimensions):
 
@@ -1217,11 +1278,21 @@ Phase 4: Output
 Present the verified image file for download.
 User Input: [I have uploaded the advertisement image. Please proceed.]`,
                                 apiKey,
-                                model: imageModel,
+                                model: preferredModel,
                                 images: [masterBase64],
                                 aspectRatio: `${task.w}:${task.h}`
                             })
-                        }).then(res => res.json());
+                        }).then(async res => {
+                            if (!res.ok) {
+                                const txt = await res.text();
+                                return { error: `HTTP ${res.status}: ${txt}` };
+                            }
+                            try {
+                                return await res.json();
+                            } catch (e) {
+                                return { error: "Invalid JSON response" };
+                            }
+                        }).catch(err => ({ error: err.message }));
                     });
 
                     const batchResults = await Promise.all(batchTasks);
@@ -1246,10 +1317,10 @@ User Input: [I have uploaded the advertisement image. Please proceed.]`,
 
                 const masterBase64 = await ensureSafeImageSize(await imageToBase64(masterImg));
                 const targets = [
-                    { id: 'half-page', w: 300, h: 600, label: "Half-Page Ad", strategy: "Balanced composition. Large, legible 'YEAR-END SALE' headline at the top. High-resolution product image in the center. Bold price badge ($68*) and clean footer." },
-                    { id: 'wide-skyscraper', w: 160, h: 600, label: "Wide Skyscraper", strategy: "Vertical reflow. Stack text elements into multiple lines. Scale product device down to fit 160px width. Extend light purple background vertically to create breathing room." },
-                    { id: 'skyscraper', w: 120, h: 600, label: "Skyscraper", strategy: "Extreme narrow stacking. Prioritize legibility. Use stacked version of logo/text. Large 'SALE' dominant text. Product image serves as a smaller icon focal point." },
-                    { id: 'portrait', w: 300, h: 1050, label: "Portrait (Tall)", strategy: "Luxury vertical space. Brand Logo at top, Product in optical center (approx 35% down), '68*' Price Badge and CTA Footer at the very bottom. Maximum negative space." }
+                    { id: 'half-page', w: 300, h: 600, label: "Half-Page Ad", strategy: "Balanced composition. Extract all text and branding elements from the source image. Stack elements: Headline (Top), Product (Center), CTA (Bottom). Maintain background style and lighting." },
+                    { id: 'wide-skyscraper', w: 160, h: 600, label: "Wide Skyscraper", strategy: "Vertical reflow. Stack source text elements into multiple lines. Scale product to fit 160px width. Extend background vertically to create breathing room without distortion." },
+                    { id: 'skyscraper', w: 120, h: 600, label: "Skyscraper", strategy: "Extreme narrow stacking. Prioritize source text legibility. Use stacked version of extracted logo/text. Maintain brand colors and atmosphere." },
+                    { id: 'portrait', w: 300, h: 1050, label: "Portrait (Tall)", strategy: "Luxury vertical space. Brand Logo at top, Product in optical center (approx 35% down), Price/CTA Footer at the very bottom. Preserve all original elements faithfully." }
                 ];
 
                 console.log(`📐 --- ADAPTIVE VERTICAL SUITE: Processing ${targets.length} AI-Generated formats ---`);
@@ -1263,9 +1334,9 @@ User Input: [I have uploaded the advertisement image. Please proceed.]`,
                         body: JSON.stringify({
                             prompt: `IAB Vertical Suite Adaptation: ${t.label} (${t.w}x${t.h}). 
                             [Design Rules]:
-                            1. PRODUCT: Maintain 1:1 fidelity.
-                            2. TEXT: Re-compose 'YEAR-END SALE', '$68*', and 'All Options' based on the ratio.
-                            3. STYLE: Light purple aesthetic with soft shadows.
+                            1. PRODUCT: Maintain 1:1 fidelity of the subject from the source image.
+                            2. TEXT: Extract ALL text from the source image and re-compose it based on the ratio. Do NOT change words.
+                            3. STYLE: Preserve the exact color theme, lighting, and aesthetic mood from the source.
                             4. [LAYOUT STRATEGY]: ${t.strategy}`,
                             apiKey,
                             model: imageModel,

@@ -34,7 +34,7 @@ export const TEMPLATES = {
                 id: '4',
                 type: 'generation',
                 position: { x: 700, y: 200 },
-                data: { label: 'Sales Badge', prompt: 'Add text overlay: "YEAR-END SALE"', output: null }
+                data: { label: 'Sales Badge', prompt: 'Add promotional text overlay based on source context', output: null }
             },
             {
                 id: '5',
@@ -263,7 +263,7 @@ Your concepts must not compromise the consistency of the product’s features. F
         ratio: 'Multi-Format',
         nodes: [
             { id: 'v1', type: 'sourceUpload', position: { x: 50, y: 200 }, data: { label: 'Master Creative', image: null } },
-            { id: 'v2', type: 'adAdapter', position: { x: 450, y: 150 }, data: { label: 'Programmatic Ad Suite', outputs: {} } }
+            { id: 'v2', type: 'adAdapter', position: { x: 450, y: 150 }, data: { label: 'Programmatic Ad Suite', outputs: {}, model: 'nano-banana-pro-preview' } }
         ],
         edges: [
             { id: 'e-v1-v2', source: 'v1', target: 'v2', animated: true }
