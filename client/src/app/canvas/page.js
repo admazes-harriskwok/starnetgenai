@@ -440,7 +440,15 @@ function CanvasInterface() {
 
         try {
             const res = await fetch(imageUrl);
+            if (!res.ok) {
+                console.error(`Failed to fetch image (${res.status}):`, imageUrl);
+                return null;
+            }
             const blob = await res.blob();
+            if (!blob.type.startsWith('image/')) {
+                console.error('Fetched resource is not an image:', blob.type);
+                return null;
+            }
             return new Promise((resolve, reject) => {
                 const reader = new FileReader();
                 reader.onloadend = () => resolve(reader.result);
@@ -455,7 +463,7 @@ function CanvasInterface() {
 
     // Ensure image is not too large for API payloads (Prevents "fetch failed" on server)
     const ensureSafeImageSize = async (base64, maxDim = 1536) => {
-        if (!base64 || !base64.startsWith('data:')) return base64;
+        if (!base64 || !base64.startsWith('data:image')) return base64;
         return new Promise((resolve) => {
             const img = new Image();
             img.onload = () => {
@@ -481,7 +489,10 @@ function CanvasInterface() {
                     resolve(base64);
                 }
             };
-            img.onerror = () => resolve(base64);
+            img.onerror = () => {
+                console.warn("Image load failed in ensureSafeImageSize");
+                resolve(null);
+            };
             img.src = base64;
         });
     };
@@ -1313,7 +1324,9 @@ User Input: [I have uploaded the advertisement image. Please proceed.]`,
                             }
 
                             const generatedImg = res.output || res.image;
-                            if (!generatedImg || !generatedImg.startsWith('data:image')) return res;
+                            if (!generatedImg || !generatedImg.startsWith('data:image')) {
+                                return { error: `Model returned text instead of image: ${generatedImg?.substring(0, 50)}...` };
+                            }
 
                             // 2. AI Verification (Similarity Check) with Gemini 1.5 Flash (Fast/Cheap)
                             // Skip if we are out of retry attempts (attempt > 1)
@@ -1381,7 +1394,8 @@ Return JSON only.`,
                         if (rawOutput && rawOutput.startsWith('data:image')) {
                             finalOutputs[idx] = await resizeBase64Image(rawOutput, task.w, task.h);
                         } else {
-                            finalOutputs[idx] = rawOutput;
+                            console.error(`Variant generation failed or returned invalid format:`, rawOutput);
+                            finalOutputs[idx] = null; // Do not render broken images
                         }
                     }
                 }
@@ -1432,7 +1446,8 @@ Return JSON only.`,
                     if (rawOutput && rawOutput.startsWith('data:image')) {
                         finalOutputs[t.id] = await resizeBase64Image(rawOutput, t.w, t.h);
                     } else {
-                        finalOutputs[t.id] = rawOutput;
+                        console.error('Vertical Suite generated invalid output:', rawOutput);
+                        finalOutputs[t.id] = null;
                     }
                 }
 

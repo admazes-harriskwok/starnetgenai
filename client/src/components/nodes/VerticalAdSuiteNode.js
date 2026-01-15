@@ -36,7 +36,13 @@ const VerticalAdSuiteNode = ({ id, data, selected }) => {
                                     style={{ aspectRatio: `${dim.w}/${dim.h}` }}
                                     onClick={() => data.onExpand && data.onExpand(outputs[dim.id])}
                                 >
-                                    <img src={outputs[dim.id]} alt={dim.label} />
+                                    {outputs[dim.id] ? (
+                                        <img src={outputs[dim.id]} alt={dim.label} />
+                                    ) : (
+                                        <div style={{ width: '100%', height: '100%', background: '#f8fafc', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+                                            <span style={{ fontSize: '1.5rem', opacity: 0.2 }}>⏳</span>
+                                        </div>
+                                    )}
                                     <div className="hover-overlay">View {dim.w}x{dim.h}</div>
                                 </div>
                                 <div className="output-info">
@@ -249,7 +255,7 @@ const VerticalAdSuiteNode = ({ id, data, selected }) => {
                     box-shadow: 0 2px 5px rgba(0,0,0,0.1);
                 }
             `}</style>
-        </div>
+        </div >
     );
 };
 
