@@ -1236,6 +1236,8 @@ Hard requirements:
 
                         // Helper for verification loop
                         const checkSimilarityWithRetry = async (attempt = 1) => {
+                            setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Generating variant (${task.w}x${task.h})...` } } : n));
+
                             // 1. Generate the Image
                             const res = await fetch('/api/generate', {
                                 method: 'POST',
@@ -1305,7 +1307,11 @@ User Input: [I have uploaded the advertisement image. Please proceed.]`,
                             }).catch(err => ({ error: err.message }));
 
                             // Handle basic failure / text output
-                            if (res.error) return res;
+                            if (res.error) {
+                                setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Error (${task.w}x${task.h}): ${res.error.substring(0, 30)}...` } } : n));
+                                return res;
+                            }
+
                             const generatedImg = res.output || res.image;
                             if (!generatedImg || !generatedImg.startsWith('data:image')) return res;
 
@@ -1332,7 +1338,7 @@ If ANY answer is "No", output STRICTLY and ONLY: {"sim": false, "reason": "reaso
 If ALL answers are "Yes" (minor crop differences allowed), output STRICTLY and ONLY: {"sim": true}
 Return JSON only.`,
                                         apiKey,
-                                        model: 'gemini-2.5-flash', // Fast verification model
+                                        model: 'gemini-1.5-flash', // Corrected from 2.5
                                         images: [masterBase64, verifyBase64],
                                         preferText: true // We want the JSON analysis text
                                     })
@@ -1370,7 +1376,7 @@ Return JSON only.`,
                         const res = batchResults[i];
                         const idx = batchIndices[i];
                         const task = IAB_TASKS[idx];
-                        const rawOutput = res.output || res.image || masterImg;
+                        const rawOutput = res.output || res.image;
 
                         if (rawOutput && rawOutput.startsWith('data:image')) {
                             finalOutputs[idx] = await resizeBase64Image(rawOutput, task.w, task.h);
