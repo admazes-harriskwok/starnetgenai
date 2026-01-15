@@ -279,6 +279,11 @@ const AdAdapterNode = ({ id, data }) => {
                     animation: spin 1s linear infinite;
                 }
                 @keyframes spin { to { transform: rotate(360deg); } }
+                @keyframes pulse { 
+                    0% { opacity: 1; } 
+                    50% { opacity: 0.5; } 
+                    100% { opacity: 1; } 
+                }
             `}</style>
         </div >
     );
