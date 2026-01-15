@@ -130,7 +130,9 @@ export async function POST(request) {
                     { category: "HARM_CATEGORY_SEXUALLY_EXPLICIT", threshold: "BLOCK_NONE" },
                     { category: "HARM_CATEGORY_DANGEROUS_CONTENT", threshold: "BLOCK_NONE" }
                 ],
-                generationConfig: {
+                generationConfig: isImageModel ? {
+                    temperature: body.temperature !== undefined ? body.temperature : 0.9
+                } : {
                     temperature: body.temperature !== undefined ? body.temperature : 0.9,
                     topP: 0.95,
                     topK: 40,
