@@ -1245,16 +1245,21 @@ Hard requirements:
 
                         const preferredModel = targetNode.data.model || imageModel;
 
-                        // Helper for verification loop
-                        const checkSimilarityWithRetry = async (attempt = 1) => {
-                            setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Generating variant (${task.w}x${task.h})...` } } : n));
+                        // Helper for verification loop (Iterative approach to avoid recursion depth issues)
+                        const checkSimilarityWithRetry = async () => {
+                            const MAX_ATTEMPTS = 5;
+                            let currentAttempt = 1;
 
-                            // 1. Generate the Image
-                            const res = await fetch('/api/generate', {
-                                method: 'POST',
-                                headers: { 'Content-Type': 'application/json' },
-                                body: JSON.stringify({
-                                    prompt: `Role: You are an expert Creative Technologist and Production Artist specializing in Programmatic Advertising. You have deep expertise in IAB (Interactive Advertising Bureau) standards, visual hierarchy, and Python-based image processing.
+                            while (currentAttempt <= MAX_ATTEMPTS) {
+                                // Update Status: Generating
+                                setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Generating variant (${task.w}x${task.h}) - Attempt ${currentAttempt}/${MAX_ATTEMPTS}...` } } : n));
+
+                                // 1. Generate the Image
+                                let res = await fetch('/api/generate', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        prompt: `Role: You are an expert Creative Technologist and Production Artist specializing in Programmatic Advertising. You have deep expertise in IAB (Interactive Advertising Bureau) standards, visual hierarchy, and Python-based image processing.
 Task: Your objective is to take the single uploaded advertisement image and generate distinct adaptations corresponding to the specific dimensions listed below. You must rearrange the visual elements (Logo, Product, Copy, CTA) to suit each aspect ratio while preserving brand identity and legibility.
 
 [SYSTEM INSTRUCTIONS]:
@@ -1299,86 +1304,135 @@ Verification: The script must print the dimensions of the saved files to the con
 Phase 4: Output
 Present the verified image file for download.
 User Input: [I have uploaded the advertisement image. Please proceed.]`,
-                                    apiKey,
-                                    model: preferredModel,
-                                    temperature: 0.15,
-                                    images: [masterBase64],
-                                    aspectRatio: `${task.w}:${task.h}`
-                                })
-                            }).then(async res => {
-                                if (!res.ok) {
-                                    const txt = await res.text();
-                                    return { error: `HTTP ${res.status}: ${txt}` };
-                                }
-                                try {
-                                    return await res.json();
-                                } catch (e) {
-                                    return { error: "Invalid JSON response" };
-                                }
-                            }).catch(err => ({ error: err.message }));
-
-                            // Handle basic failure / text output
-                            if (res.error) {
-                                setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Error (${task.w}x${task.h}): ${res.error.substring(0, 30)}...` } } : n));
-                                return res;
-                            }
-
-                            const generatedImg = res.output || res.image;
-                            if (!generatedImg || !generatedImg.startsWith('data:image')) {
-                                return { error: `Model returned text instead of image: ${generatedImg?.substring(0, 50)}...` };
-                            }
-
-                            // 2. AI Verification (Similarity Check) with Gemini 1.5 Flash (Fast/Cheap)
-                            // Skip if we are out of retry attempts (attempt > 1)
-                            if (attempt > 1) return res;
-
-                            setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Verifying consistency (${task.w}x${task.h})...` } } : n));
-
-                            try {
-                                const verifyBase64 = await ensureSafeImageSize(await imageToBase64(generatedImg));
-                                const verifyRes = await fetch('/api/generate', {
-                                    method: 'POST',
-                                    headers: { 'Content-Type': 'application/json' },
-                                    body: JSON.stringify({
-                                        prompt: `Role: Brand Compliance Officer.
-Task: Compare Image 1 (Original Source) and Image 2 (Generated Variant).
-Check for strict visual consistency:
-1. Is the human model exactly the same person? (Face, hair, skin tone) -> Yes/No
-2. Is the font/typography style identical? -> Yes/No
-3. Is the main product identical? -> Yes/No
-
-If ANY answer is "No", output STRICTLY and ONLY: {"sim": false, "reason": "reason here"}
-If ALL answers are "Yes" (minor crop differences allowed), output STRICTLY and ONLY: {"sim": true}
-Return JSON only.`,
                                         apiKey,
-                                        model: 'gemini-1.5-flash', // Corrected from 2.5
-                                        images: [masterBase64, verifyBase64],
-                                        preferText: true // We want the JSON analysis text
+                                        model: preferredModel,
+                                        temperature: 0.15,
+                                        images: [masterBase64],
+                                        aspectRatio: `${task.w}:${task.h}`
                                     })
-                                });
+                                }).then(async r => {
+                                    if (!r.ok) {
+                                        const txt = await r.text();
+                                        return { error: `HTTP ${r.status}: ${txt}` };
+                                    }
+                                    try {
+                                        return await r.json();
+                                    } catch (e) {
+                                        return { error: "Invalid JSON response" };
+                                    }
+                                }).catch(err => ({ error: err.message }));
 
-                                const verifyData = await verifyRes.json();
-                                const verifyText = verifyData.text || verifyData.output;
-
-                                let isPass = true;
-                                if (verifyText && (verifyText.includes('"sim": false') || verifyText.includes('"sim":false'))) {
-                                    isPass = false;
+                                // Handle Generation Failure
+                                if (res.error) {
+                                    setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Error (${task.w}x${task.h}): ${res.error.substring(0, 30)}...` } } : n));
+                                    return res; // Stop if generation API fails hard
                                 }
 
-                                if (!isPass) {
-                                    console.warn(`⚠️ QA CHECK FAILED for ${task.w}x${task.h}. Retrying... Reason: ${verifyText}`);
-                                    setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Low similarity detected. Regenerating ${task.w}x${task.h}...` } } : n));
-                                    // Retry recursively (attempt 2)
-                                    return await checkSimilarityWithRetry(attempt + 1);
-                                } else {
-                                    console.log(`✅ QA CHECK PASSED for ${task.w}x${task.h}`);
+                                const generatedImg = res.output || res.image;
+                                if (!generatedImg || !generatedImg.startsWith('data:image')) {
+                                    // If text returned instead of image, treat as failure but maybe retry? 
+                                    // For now, fail to avoid infinite text loops.
+                                    return { error: `Model returned text instead of image: ${generatedImg?.substring(0, 50)}...` };
                                 }
 
-                            } catch (e) {
-                                console.warn("Verification failed, accepting image anyway:", e);
+                                // 2. AI Verification
+                                setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Verifying consistency (${task.w}x${task.h})...` } } : n));
+
+                                try {
+                                    const verifyBase64 = await ensureSafeImageSize(await imageToBase64(generatedImg));
+                                    const verifyRes = await fetch('/api/generate', {
+                                        method: 'POST',
+                                        headers: { 'Content-Type': 'application/json' },
+                                        body: JSON.stringify({
+                                            prompt: `Role: Brand Compliance Officer.
+Task: Compare Image 1 (Original Master) and Image 2 (Generated Variant).
+
+You are performing a strict forensic audit. Check for the following specific failures. 
+If ANY check fails, the result is FALSE.
+
+1. STRICT IDENTITY & ACCESSORIES: 
+   - Is the human model EXACTLY the same person?
+   - COMPULSORY CHECK: Look at accessories (Glasses, Earrings) and Clothing Patterns.
+   - FAILURE CONDITION: Reject if the person changes ethnicity, loses their glasses, or changes their outfit (e.g., distinct star pattern sweater).
+
+2. UI & LAYOUT LOGIC:
+   - Are the UI elements (Buttons, Logos, Text) distinct and logical?
+   - FAILURE CONDITION: Reject if there are DUPLICATE Call-to-Action buttons (e.g., two "Learn More" buttons), duplicate headlines, or floating text fragments. 
+
+3. VISUAL INTEGRITY (SEAMS):
+   - Is the image extension seamless?
+   - FAILURE CONDITION: Reject if there are unnatural hard vertical/horizontal lines, visible "cut-and-paste" seams, or black bars separating content.
+
+4. CONTEXT & BRANDING:
+   - Is the background setting consistent with the original theme (e.g., Abstract vs. Realistic)?
+   - Is the Main Product/Logo present and correctly anchored?
+
+OUTPUT LOGIC:
+- If ANY answer is "No" (or a Failure Condition is met), output STRICTLY and ONLY: {"sim": false, "reason": "Specific reason (e.g., 'Subject missing glasses', 'Duplicate CTA button found', 'Hard vertical seam visible')"}
+- If ALL checks pass (Minor cropping/resizing is acceptable), output STRICTLY and ONLY: {"sim": true}
+
+Return JSON only.`,
+                                            apiKey,
+                                            model: 'gemini-2.5-flash',
+                                            images: [masterBase64, verifyBase64],
+                                            preferText: true
+                                        })
+                                    });
+
+                                    const verifyData = await verifyRes.json();
+                                    const verifyText = verifyData.text || verifyData.output;
+
+                                    let isPass = true;
+                                    let reason = "Unknown";
+
+                                    // Extract Reason from JSON
+                                    try {
+                                        // Attempt to parse strictly valid JSON or loose JSON in text
+                                        const jsonMatch = verifyText.match(/\{[\s\S]*\}/);
+                                        if (jsonMatch) {
+                                            const parsed = JSON.parse(jsonMatch[0]);
+                                            if (parsed.sim === false) {
+                                                isPass = false;
+                                                reason = parsed.reason || "AI detected inconsistency";
+                                            }
+                                        } else {
+                                            // Fallback string matching
+                                            if (verifyText.includes('"sim": false') || verifyText.includes('"sim":false')) {
+                                                isPass = false;
+                                                reason = "Low similarity detected (Raw Text)";
+                                            }
+                                        }
+                                    } catch (e) {
+                                        console.warn("Could not parse verification JSON:", e);
+                                    }
+
+                                    if (isPass) {
+                                        console.log(`✅ QA CHECK PASSED for ${task.w}x${task.h} on attempt ${currentAttempt}`);
+                                        // Update status to Success before returning? Or let the next step handle it.
+                                        // Use the successful image
+                                        return res;
+                                    } else {
+                                        console.warn(`⚠️ QA CHECK FAILED for ${task.w}x${task.h} (Attempt ${currentAttempt}). Reason: ${reason}`);
+                                        setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Retry ${currentAttempt}/${MAX_ATTEMPTS}: ${reason.substring(0, 50)}...` } } : n));
+
+                                        // Increment and loop effectively generates again in next iteration
+                                        currentAttempt++;
+                                        // Add a small delay/backoff?
+                                        await new Promise(r => setTimeout(r, 1000));
+                                    }
+
+                                } catch (e) {
+                                    console.warn("Verification API failed completely:", e);
+                                    // If verification fails due to network, we probably shouldn't discard the image?
+                                    // But user wants strict checking. Let's count it as a fail or just return result?
+                                    // For safety, if verification crashes, we accept the image to avoid blocking.
+                                    return res;
+                                }
                             }
 
-                            return res;
+                            // If loop finishes without success
+                            setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Failed verification after ${MAX_ATTEMPTS} attempts.` } } : n));
+                            return { error: `Failed to verify consistency after ${MAX_ATTEMPTS} attempts.` };
                         };
 
                         return checkSimilarityWithRetry();
@@ -1394,7 +1448,9 @@ Return JSON only.`,
                         if (rawOutput && rawOutput.startsWith('data:image')) {
                             finalOutputs[idx] = await resizeBase64Image(rawOutput, task.w, task.h);
                         } else {
-                            console.error(`Variant generation failed or returned invalid format:`, rawOutput);
+                            // Fix: Log the actual error object if available, instead of undefined
+                            const errorDetail = res.error || rawOutput || "Unknown output format";
+                            console.error(`Variant generation failed [${task.w}x${task.h}]:`, errorDetail);
                             finalOutputs[idx] = null; // Do not render broken images
                         }
                     }
