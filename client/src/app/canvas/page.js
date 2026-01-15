@@ -1234,11 +1234,14 @@ Hard requirements:
 
                         const preferredModel = targetNode.data.model || imageModel;
 
-                        return fetch('/api/generate', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({
-                                prompt: `Role: You are an expert Creative Technologist and Production Artist specializing in Programmatic Advertising. You have deep expertise in IAB (Interactive Advertising Bureau) standards, visual hierarchy, and Python-based image processing.
+                        // Helper for verification loop
+                        const checkSimilarityWithRetry = async (attempt = 1) => {
+                            // 1. Generate the Image
+                            const res = await fetch('/api/generate', {
+                                method: 'POST',
+                                headers: { 'Content-Type': 'application/json' },
+                                body: JSON.stringify({
+                                    prompt: `Role: You are an expert Creative Technologist and Production Artist specializing in Programmatic Advertising. You have deep expertise in IAB (Interactive Advertising Bureau) standards, visual hierarchy, and Python-based image processing.
 Task: Your objective is to take the single uploaded advertisement image and generate distinct adaptations corresponding to the specific dimensions listed below. You must rearrange the visual elements (Logo, Product, Copy, CTA) to suit each aspect ratio while preserving brand identity and legibility.
 
 [SYSTEM INSTRUCTIONS]:
@@ -1246,6 +1249,12 @@ ${iabBrandingLevel}
 
 [LAYOUT RULE FOR THIS SIZE]:
 ${layoutRule}
+
+[NEGATIVE CONSTRAINTS - DO NOT IGNORE]:
+- DO NOT CHANGE THE FONT. Use the exact same font style as the source.
+- DO NOT CHANGE THE MODEL/PERSON. The person in the image must remain exactly identical (1:1 fidelity).
+- DO NOT ALTER THE PRODUCT.
+- DO NOT HALLUCINATE NEW ELEMENTS.
 
 Critical Constraint (Pixel Accuracy): You must guarantee 100% pixel accuracy for the downloadable files. The generative model's native output is often approximate. Therefore, you MUST use your internal Python Code Execution capabilities to process the final images. You will generate the visual assets and then programmatically resize/crop them to the exact integers provided using the PIL (Pillow) library before presenting them to me.
 Input Data (Target Dimensions):
@@ -1277,22 +1286,83 @@ Verification: The script must print the dimensions of the saved files to the con
 Phase 4: Output
 Present the verified image file for download.
 User Input: [I have uploaded the advertisement image. Please proceed.]`,
-                                apiKey,
-                                model: preferredModel,
-                                images: [masterBase64],
-                                aspectRatio: `${task.w}:${task.h}`
-                            })
-                        }).then(async res => {
-                            if (!res.ok) {
-                                const txt = await res.text();
-                                return { error: `HTTP ${res.status}: ${txt}` };
-                            }
+                                    apiKey,
+                                    model: preferredModel,
+                                    temperature: 0.15,
+                                    images: [masterBase64],
+                                    aspectRatio: `${task.w}:${task.h}`
+                                })
+                            }).then(async res => {
+                                if (!res.ok) {
+                                    const txt = await res.text();
+                                    return { error: `HTTP ${res.status}: ${txt}` };
+                                }
+                                try {
+                                    return await res.json();
+                                } catch (e) {
+                                    return { error: "Invalid JSON response" };
+                                }
+                            }).catch(err => ({ error: err.message }));
+
+                            // Handle basic failure / text output
+                            if (res.error) return res;
+                            const generatedImg = res.output || res.image;
+                            if (!generatedImg || !generatedImg.startsWith('data:image')) return res;
+
+                            // 2. AI Verification (Similarity Check) with Gemini 1.5 Flash (Fast/Cheap)
+                            // Skip if we are out of retry attempts (attempt > 1)
+                            if (attempt > 1) return res;
+
+                            setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Verifying consistency (${task.w}x${task.h})...` } } : n));
+
                             try {
-                                return await res.json();
+                                const verifyBase64 = await ensureSafeImageSize(await imageToBase64(generatedImg));
+                                const verifyRes = await fetch('/api/generate', {
+                                    method: 'POST',
+                                    headers: { 'Content-Type': 'application/json' },
+                                    body: JSON.stringify({
+                                        prompt: `Role: Brand Compliance Officer.
+Task: Compare Image 1 (Original Source) and Image 2 (Generated Variant).
+Check for strict visual consistency:
+1. Is the human model exactly the same person? (Face, hair, skin tone) -> Yes/No
+2. Is the font/typography style identical? -> Yes/No
+3. Is the main product identical? -> Yes/No
+
+If ANY answer is "No", output STRICTLY and ONLY: {"sim": false, "reason": "reason here"}
+If ALL answers are "Yes" (minor crop differences allowed), output STRICTLY and ONLY: {"sim": true}
+Return JSON only.`,
+                                        apiKey,
+                                        model: 'gemini-2.5-flash', // Fast verification model
+                                        images: [masterBase64, verifyBase64],
+                                        preferText: true // We want the JSON analysis text
+                                    })
+                                });
+
+                                const verifyData = await verifyRes.json();
+                                const verifyText = verifyData.text || verifyData.output;
+
+                                let isPass = true;
+                                if (verifyText && (verifyText.includes('"sim": false') || verifyText.includes('"sim":false'))) {
+                                    isPass = false;
+                                }
+
+                                if (!isPass) {
+                                    console.warn(`⚠️ QA CHECK FAILED for ${task.w}x${task.h}. Retrying... Reason: ${verifyText}`);
+                                    setNodes(nds => nds.map(n => n.id === id ? { ...n, data: { ...n.data, status: `Low similarity detected. Regenerating ${task.w}x${task.h}...` } } : n));
+                                    // Retry recursively (attempt 2)
+                                    return await checkSimilarityWithRetry(attempt + 1);
+                                } else {
+                                    console.log(`✅ QA CHECK PASSED for ${task.w}x${task.h}`);
+                                }
+
                             } catch (e) {
-                                return { error: "Invalid JSON response" };
+                                console.warn("Verification failed, accepting image anyway:", e);
                             }
-                        }).catch(err => ({ error: err.message }));
+
+                            return res;
+                        };
+
+                        return checkSimilarityWithRetry();
                     });
 
                     const batchResults = await Promise.all(batchTasks);

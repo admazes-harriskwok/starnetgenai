@@ -35,7 +35,15 @@ const AdAdapterNode = ({ id, data }) => {
                         <span className="node-icon">📐</span>
                         <div className="title-group">
                             <span className="node-title">IAB Ad Adapter</span>
-                            <span className="node-subtitle">10 Programmatic Variants</span>
+                            <span className="node-subtitle">
+                                {data.status ? (
+                                    <span style={{ color: '#60a5fa', fontWeight: 600, animation: 'pulse 1.5s infinite' }}>
+                                        {data.status}
+                                    </span>
+                                ) : (
+                                    '10 Programmatic Variants'
+                                )}
+                            </span>
                         </div>
                     </div>
                     {isLoading && <div className="spinner-small"></div>}
